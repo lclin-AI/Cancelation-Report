@@ -335,7 +335,7 @@ $("loadDetail").onclick=()=>{
 };
 
 // ---- CSV export helpers ----
-function dl(name,rows){const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(",")).join("\n");const b=new Blob([\ufeff+csv],{type:"text/csv"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=name;a.click();}
+function dl(name,rows){const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(",")).join("\n");const b=new Blob([csv],{type:"text/csv"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=name;a.click();}
 $("expFocus").onclick=()=>dl("focus.csv",[["SKU ID","SKU 名稱","出售量","取消量","取消率%"],...(window.__focus||[]).map(o=>[o.sku_id,o.name,o.sold,o.cancel,o.rate.toFixed(2)])]);
 $("expCat").onclick=()=>dl("category.csv",[["類別","出售量","取消量","取消率%"],...(window.__cat||[]).map(o=>[o.cat,o.sold,o.cancel,o.rate.toFixed(2)])]);
 $("expTeam").onclick=()=>dl("team.csv",[["類別","E出售","E取消","E率%","H出售","H取消","H率%"],...(window.__team||[]).map(o=>[o.cat,o.eSold,o.eC,o.eR.toFixed(2),o.hSold,o.hC,o.hR.toFixed(2)])]);
