@@ -254,17 +254,17 @@ function runAnalyze(){
     if(to&&r.delivery_date_norm>normDate(to))return false;
     return true;
   });
-  const denom={}, numer={}, idmap={};
+  const denom={}, numer={}, namemap={};
   d.forEach(r=>{
-    denom[r.sku_name]=(denom[r.sku_name]||0)+r.sold_qty;
-    if(!idmap[r.sku_name])idmap[r.sku_name]=new Set();
-    if(r.sku_id)idmap[r.sku_name].add(r.sku_id);
-    if(selected.has(r.reason)) numer[r.sku_name]=(numer[r.sku_name]||0)+r.refund_qty;
+    const key = (r.sku_id && String(r.sku_id).trim()) ? String(r.sku_id).trim() : r.sku_name;
+    denom[key]=(denom[key]||0)+r.sold_qty;
+    if(!namemap[key] && r.sku_name)namemap[key]=r.sku_name;
+    if(selected.has(r.reason)) numer[key]=(numer[key]||0)+r.refund_qty;
   });
-  LAST=Object.keys(denom).map(name=>{
-    const sold=denom[name], cancelled=numer[name]||0;
+  LAST=Object.keys(denom).map(id=>{
+    const sold=denom[id], cancelled=numer[id]||0;
     const rate=sold>0?(cancelled/sold*100):0;
-    return {sku_id:[...idmap[name]].join(', '),sku_name:name,
+    return {sku_id:id,sku_name:namemap[id]||'',
             sold_qty:+sold.toFixed(2),cancelled_qty:+cancelled.toFixed(2),
             cancellation_rate:+rate.toFixed(2)};
   }).sort((a,b)=>b.cancellation_rate-a.cancellation_rate);
