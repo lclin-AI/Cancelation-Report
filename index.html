@@ -96,10 +96,10 @@
 <script>
 const SETTINGS = {
   google_sheets: { spreadsheet_id: "1-mWqehB7CUerQQkSFLQUPYAmD-uVrtuoMznQRyHPj40", gid: "0" },
-  columns: { delivery_date:"B", order_no:"C", carline:"D", merchant:"F", sku_id:"G",
-             sku_name:"H", cancel_type:"J", cs_reason:"K", report_reason:"L",
-             type:"N", category:"O", sold_qty:"Q", refund_qty:"R",
-             refund_amt_1:"S", refund_amt_2:"T" },
+  columns: { delivery_date:"delivery_date", order_no:"order_number", carline:"Store Name", merchant:"shelf_name", sku_id:"sku_id",
+             sku_name:"sku_name_chi", cancel_type:"sku_cancel_reason", cs_reason:"sku_cs_refund_reason", report_reason:"REFUND_REPORT_CANCEL_reason",
+             type:"express_main_cat_name_zh", category:"sub_cat1_name_zh", sold_qty:"quantity", refund_qty:"refund_quantity",
+             refund_amt_1:"refund_amount", refund_amt_2:"refund_mall_dollar" },
   logic: { report_cancel_value:"REFUND_REPORT_CANCEL", cs_cancel_value:"CS_CANCEL",
            express_order_prefix:"M", express_carline_prefix:"WM" },
   server: { header_row: 1 }
@@ -133,14 +133,13 @@ function normName(v){
 
 let ROWS=[];
 
-function mapAndEnrich(matrix){
-  const hdr = SETTINGS.server.header_row;
-  const body = matrix.slice(hdr);
+function mapAndEnrich(records){
   const C = SETTINGS.columns, L = SETTINGS.logic;
   const rows = [];
-  for(const raw of body){
-    if(!raw || raw.every(x=>String(x).trim()===''))continue;
-    const g = k => (raw[colIdx(C[k])] ?? "");
+  for(const rec of records){
+    if(!rec)continue;
+    const g = k => (rec[C[k]] ?? "");
+    if(String(g('order_no')).trim()==='' && String(g('sku_id')).trim()==='' && String(g('sku_name')).trim()==='')continue;
     const order = String(g('order_no'));
     const platform = order.trim().startsWith(L.express_order_prefix) ? "Express" : "HKTVmall";
     const carRaw = String(g('carline'));
@@ -177,7 +176,7 @@ function afterLoad(){
 }
 function fetchCsvText(url){
   return new Promise((res,rej)=>{
-    Papa.parse(url,{download:true,header:false,skipEmptyLines:false,
+    Papa.parse(url,{download:true,header:true,skipEmptyLines:true,
       complete:r=>res(r.data), error:e=>rej(e)});
   });
 }
@@ -197,7 +196,7 @@ async function loadUrl(){
 function loadCsv(){
   const f=document.getElementById('csvFile').files[0];
   if(!f){alert('揀個 CSV 先');return;}
-  Papa.parse(f,{header:false,skipEmptyLines:false,
+  Papa.parse(f,{header:true,skipEmptyLines:true,
     complete:r=>{ROWS=mapAndEnrich(r.data);afterLoad();},
     error:e=>alert('讀 CSV 失敗: '+e)});
 }
