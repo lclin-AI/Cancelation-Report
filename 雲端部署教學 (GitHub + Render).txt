@@ -1,0 +1,92 @@
+雲端部署教學 (GitHub + Render)
+=====================================
+目標: 將工具放上網, 有條公開網址俾同事用, 唔受公司 WiFi 隔離。
+有密碼登入保護。免費。
+
+=====================================
+準備: 檔案清單 (整個資料夾上 GitHub)
+=====================================
+app.py
+analyzer.py
+settings.json
+requirements.txt   (已含 gunicorn)
+render.yaml
+.gitignore
+templates/index.html
+templates/login.html
+
+注意: 唔好上載任何真實資料 CSV (.gitignore 已排除)。
+
+=====================================
+第一步: 放上 GitHub
+=====================================
+方法 A - 網頁上載 (最簡單, 唔使裝 git):
+1. 去 github.com 登入, 撳右上 "+" -> "New repository"
+2. Repository name 填: cancellation-analyzer
+3. 揀 "Private" (私人, 唔俾人睇到你 code) -> Create repository
+4. 撳 "uploading an existing file"
+5. 將成個資料夾啲檔案拖上去 (連 templates 資料夾)
+   - templates 資料夾: 要保持 templates/index.html 嘅結構
+   - 拖檔案時, 可以逐個資料夾上, 或用 git (方法 B)
+6. 撳 "Commit changes"
+
+方法 B - 用 git (如果你識):
+   git init
+   git add .
+   git commit -m "first"
+   git remote add origin https://github.com/你帳戶/cancellation-analyzer.git
+   git push -u origin main
+
+=====================================
+第二步: 部署上 Render
+=====================================
+1. 去 render.com, 用 GitHub 帳戶登入 (Sign up with GitHub)
+2. 撳 "New +" -> "Web Service"
+3. 連你個 GitHub -> 揀 cancellation-analyzer repo
+4. Render 會自動讀到 render.yaml, 大部分設定已填好:
+   - Build Command: pip install -r requirements.txt
+   - Start Command: gunicorn app:app
+   - Plan: Free
+5. 重要 - 設密碼:
+   喺 "Environment" / "Environment Variables" 加:
+   - Key:   APP_PASSWORD
+   - Value: 你自己諗一個密碼 (例如 wetmarket2026)
+   (SECRET_KEY 會自動生成, 唔使理)
+6. 撳 "Create Web Service"
+7. 等幾分鐘 build + deploy
+8. 完成後, Render 俾你一條網址, 例如:
+   https://cancellation-analyzer.onrender.com
+
+=====================================
+第三步: 俾同事用
+=====================================
+1. 將條 Render 網址 + 密碼 send 俾同事
+2. 同事開網址 -> 輸入密碼 -> 就用到, 功能同本地版一樣
+3. 喺公司/屋企/手機都用到, 唔受 WiFi 隔離影響
+
+=====================================
+重要事項
+=====================================
+1. 免費方案會 "休眠"
+   - 15 分鐘冇人用, Render 會令 app 休眠
+   - 下次有人開, 要等 30-60 秒 "喚醒" (第一次載入慢, 正常)
+   - 唔想休眠要升級付費方案 (通常唔使)
+
+2. 資料來源
+   - 雲端版一樣有 "上載 CSV" / "貼連結" / "預設 Sheet" 三個來源
+   - 預設 Sheet: 要張 Sheet 係 "知道連結可檢視" 先讀到
+   - 建議同事主要用 "上載 CSV" (Looker export), 最快最安全
+
+3. 改咗 code 想更新?
+   - 將新檔案 push 上 GitHub (或網頁重新上載)
+   - Render 會自動偵測到, 自動重新部署
+   - 唔使再做任何嘢
+
+4. 安全
+   - 已加密碼登入, 冇密碼入唔到
+   - 想改密碼: Render -> Environment -> 改 APP_PASSWORD 個 value -> 儲存 (會自動重啟)
+   - repo 設 Private, 你 code 唔會俾人睇到
+
+5. 本地版都仲用到
+   - 你部機雙擊 start.bat 一樣 work
+   - 本地唔使密碼 (因為冇設 APP_PASSWORD 環境變數)

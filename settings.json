@@ -1,0 +1,33 @@
+{
+  "google_sheets": {
+    "spreadsheet_id": "1-mWqehB7CUerQQkSFLQUPYAmD-uVrtuoMznQRyHPj40",
+    "gid": "0"
+  },
+  "columns": {
+    "delivery_date": "B",
+    "order_no": "C",
+    "carline": "D",
+    "merchant": "F",
+    "sku_id": "G",
+    "sku_name": "H",
+    "cancel_type": "J",
+    "cs_reason": "K",
+    "report_reason": "L",
+    "type": "N",
+    "category": "O",
+    "sold_qty": "Q",
+    "refund_qty": "R",
+    "refund_amt_1": "S",
+    "refund_amt_2": "T"
+  },
+  "logic": {
+    "report_cancel_value": "REFUND_REPORT_CANCEL",
+    "cs_cancel_value": "CS_CANCEL",
+    "express_order_prefix": "M",
+    "express_carline_prefix": "WM"
+  },
+  "server": {
+    "port": 5150,
+    "header_row": 1
+  }
+}
