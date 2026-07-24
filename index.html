@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>貨品取消率分析工具</title>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"><\/script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"><\/script>
+<style>
+  body{font-family:system-ui,"Microsoft JhengHei",sans-serif;margin:0;background:#f5f6f8;color:#222}
+  header{background:#1f2937;color:#fff;padding:12px 20px;font-size:18px;font-weight:600}
+  .wrap{max-width:1100px;margin:20px auto;padding:0 16px}
+  .card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin-bottom:16px}
+  label{font-size:14px}
+  select,input[type=text],input[type=date]{padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:14px}
+  button{padding:8px 14px;border:0;border-radius:6px;background:#2563eb;color:#fff;font-size:14px;cursor:pointer}
+  button.sec{background:#6b7280}
+  button:disabled{opacity:.5;cursor:default}
+  .row{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:10px}
+  .reasons{display:flex;flex-wrap:wrap;gap:6px 16px}
+  .reasons label{display:flex;gap:4px;align-items:center;font-size:13px}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th,td{border:1px solid #e5e7eb;padding:6px 8px;text-align:right}
+  th:nth-child(2),td:nth-child(2){text-align:left}
+  th{background:#f3f4f6}
+  .muted{color:#6b7280;font-size:13px}
+  #login{position:fixed;inset:0;background:#1f2937;display:flex;align-items:center;justify-content:center}
+  #login .box{background:#fff;padding:28px;border-radius:10px;width:280px;text-align:center}
+  .err{color:#dc2626;font-size:13px;margin-top:6px}
+  h3{margin:4px 0 12px}
+  .grp{margin-bottom:8px}
+  .grp b{font-size:13px}
+</style>
+</head>
+<body>
+
+<div id="login">
+  <div class="box">
+    <h3>請登入</h3>
+    <input type="password" id="pw" placeholder="密碼" style="width:100%;box-sizing:border-box">
+    <div style="margin-top:10px"><button onclick="doLogin()" style="width:100%">登入</button></div>
+    <div class="err" id="loginErr"></div>
+  </div>
+</div>
+
+<header>貨品取消率分析工具 (Cancellation Rate Analyzer)</header>
+<div class="wrap" id="app" style="display:none">
+
+  <div class="card">
+    <h3>1. 資料來源</h3>
+    <div class="row">
+      <button onclick="loadDefault()">讀取預設 Google Sheet</button>
+      <span class="muted">或</span>
+      <input type="text" id="sheetUrl" placeholder="貼 Google Sheet 連結" style="flex:1;min-width:220px">
+      <button class="sec" onclick="loadUrl()">由連結讀</button>
+    </div>
+    <div class="row">
+      <label>上載 CSV: <input type="file" id="csvFile" accept=".csv"></label>
+      <button class="sec" onclick="loadCsv()">讀 CSV</button>
+      <span class="muted" id="srcStatus"></span>
+    </div>
+  </div>
+
+  <div class="card" id="filterCard" style="display:none">
+    <h3>2. 揀原因 + 篩選</h3>
+    <div id="reasonBox" class="reasons"></div>
+    <div class="row" style="margin-top:12px">
+      <label>平台 <select id="fPlatform"></select></label>
+      <label>車隊 <select id="fTeam"></select></label>
+      <label>由 <input type="date" id="fFrom"></label>
+      <label>至 <input type="date" id="fTo"></label>
+    </div>
+    <div class="row">
+      <button onclick="runAnalyze()">分析</button>
+      <button class="sec" onclick="toggleAll(true)">全選原因</button>
+      <button class="sec" onclick="toggleAll(false)">全部唔揀</button>
+      <button class="sec" onclick="exportCsv()" id="expBtn" disabled>匯出 CSV</button>
+    </div>
+  </div>
+
+  <div class="card" id="chartCard" style="display:none">
+    <h3>Top 15 取消率</h3>
+    <canvas id="chart" height="120"></canvas>
+  </div>
+
+  <div class="card" id="tableCard" style="display:none">
+    <h3>各 SKU 取消率</h3>
+    <div class="muted" id="tableInfo"></div>
+    <div style="overflow:auto;max-height:520px;margin-top:8px">
+      <table id="resultTable"></table>
+    </div>
+  </div>
+</div>
+
+<script>
+const SETTINGS = {
+  google_sheets: { spreadsheet_id: "1-mWqehB7CUerQQkSFLQUPYAmD-uVrtuoMznQRyHPj40", gid: "0" },
+  columns: { delivery_date:"B", order_no:"C", carline:"D", merchant:"F", sku_id:"G",
+             sku_name:"H", cancel_type:"J", cs_reason:"K", report_reason:"L",
+             type:"N", category:"O", sold_qty:"Q", refund_qty:"R",
+             refund_amt_1:"S", refund_amt_2:"T" },
+  logic: { report_cancel_value:"REFUND_REPORT_CANCEL", cs_cancel_value:"CS_CANCEL",
+           express_order_prefix:"M", express_carline_prefix:"WM" },
+  server: { header_row: 1 }
+};
+const APP_PASSWORD = "changeme";
+
+function doLogin(){
+  if(document.getElementById('pw').value === APP_PASSWORD){
+    document.getElementById('login').style.display='none';
+    document.getElementById('app').style.display='block';
+  } else { document.getElementById('loginErr').textContent='密碼錯誤'; }
+}
+document.getElementById('pw').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+
+function colIdx(letter){let i=0;for(const c of letter.toUpperCase())i=i*26+(c.charCodeAt(0)-64);return i-1;}
+function toNum(v){const n=parseFloat(String(v).replace(/,/g,''));return isNaN(n)?0:n;}
+function normDate(v){
+  if(v==null)return "";
+  let s=String(v).trim(); if(!s)return "";
+  let m=s.match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
+  if(m)return m[1].padStart(4,'0')+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0');
+  m=s.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if(m)return m[1].padStart(4,'0')+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0');
+  return s;
+}
+function normName(v){
+  return String(v==null?'':v).replace(/\u3000/g,' ').replace(/\u00a0/g,' ')
+    .replace(/[\u200b\u200c\u200d\ufeff]/g,'').replace(/\s+/g,' ').trim();
+}
+
+let ROWS=[];
+
+function mapAndEnrich(matrix){
+  const hdr = SETTINGS.server.header_row;
+  const body = matrix.slice(hdr);
+  const C = SETTINGS.columns, L = SETTINGS.logic;
+  const rows = [];
+  for(const raw of body){
+    if(!raw || raw.every(x=>String(x).trim()===''))continue;
+    const g = k => (raw[colIdx(C[k])] ?? "");
+    const order = String(g('order_no'));
+    const platform = order.trim().startsWith(L.express_order_prefix) ? "Express" : "HKTVmall";
+    const carRaw = String(g('carline'));
+    let team = "HKTVmall車隊";
+    if(carRaw.includes('-')){
+      const after = carRaw.split('-')[1].trim();
+      if(after.slice(0,2).toUpperCase()===L.express_carline_prefix) team="Express車隊";
+    }
+    const ct = String(g('cancel_type')).trim();
+    let reason="", src="";
+    if(ct===L.report_cancel_value){src="客人自報";reason=String(g('report_reason')).trim();}
+    else if(ct===L.cs_cancel_value){src="客服處理";reason=String(g('cs_reason')).trim();}
+    let typ = String(g('type')).trim();
+    if(!typ || typ.toLowerCase()==='null') typ="(未分類)";
+    rows.push({
+      sku_id:String(g('sku_id')).trim(), sku_name:normName(g('sku_name')),
+      cancel_type:ct, platform, carline_team:team,
+      delivery_date_norm:normDate(g('delivery_date')),
+      reason, reason_source:src, type:typ,
+      sold_qty:toNum(g('sold_qty')), refund_qty:toNum(g('refund_qty'))
+    });
+  }
+  return rows;
+}
+
+function csvUrl(sid,gid){return 'https://docs.google.com/spreadsheets/d/'+sid+'/export?format=csv&gid='+(gid||'0');}
+function extractSid(u){const m=u.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);return m?m[1]:null;}
+function extractGid(u){const m=u.match(/[#&]gid=(\d+)/);return m?m[1]:'0';}
+
+function afterLoad(){
+  document.getElementById('srcStatus').textContent = '已載入 '+ROWS.length+' 行';
+  buildFilters();
+  document.getElementById('filterCard').style.display='block';
+}
+function fetchCsvText(url){
+  return new Promise((res,rej)=>{
+    Papa.parse(url,{download:true,header:false,skipEmptyLines:false,
+      complete:r=>res(r.data), error:e=>rej(e)});
+  });
+}
+async function loadDefault(){
+  try{ setBusy('讀緊預設 Sheet…');
+    const m=await fetchCsvText(csvUrl(SETTINGS.google_sheets.spreadsheet_id,SETTINGS.google_sheets.gid));
+    ROWS=mapAndEnrich(m); afterLoad();
+  }catch(e){ alert('讀 Sheet 失敗: '+e+'\n(確認張 Sheet 設咗「知道連結可檢視」)'); }
+}
+async function loadUrl(){
+  const u=document.getElementById('sheetUrl').value.trim();
+  const sid=extractSid(u); if(!sid){alert('連結格式唔啱');return;}
+  try{ setBusy('讀緊…'); const m=await fetchCsvText(csvUrl(sid,extractGid(u)));
+    ROWS=mapAndEnrich(m); afterLoad();
+  }catch(e){ alert('讀失敗: '+e); }
+}
+function loadCsv(){
+  const f=document.getElementById('csvFile').files[0];
+  if(!f){alert('揀個 CSV 先');return;}
+  Papa.parse(f,{header:false,skipEmptyLines:false,
+    complete:r=>{ROWS=mapAndEnrich(r.data);afterLoad();},
+    error:e=>alert('讀 CSV 失敗: '+e)});
+}
+function setBusy(t){document.getElementById('srcStatus').textContent=t;}
+
+function buildFilters(){
+  const box=document.getElementById('reasonBox');
+  const groups={"客人自報":new Set(),"客服處理":new Set()};
+  ROWS.forEach(r=>{if(r.reason_source&&r.reason)groups[r.reason_source].add(r.reason);});
+  box.innerHTML='';
+  for(const g of ["客人自報","客服處理"]){
+    const arr=[...groups[g]].sort();
+    if(!arr.length)continue;
+    const d=document.createElement('div');d.className='grp';
+    d.innerHTML='<b>'+g+'</b>';
+    const wrap=document.createElement('div');wrap.className='reasons';
+    arr.forEach(rs=>{
+      const l=document.createElement('label');
+      const cb=document.createElement('input');
+      cb.type='checkbox';cb.className='reasonCb';cb.value=rs;cb.checked=true;
+      l.appendChild(cb);l.appendChild(document.createTextNode(' '+rs));
+      wrap.appendChild(l);
+    });
+    d.appendChild(wrap);box.appendChild(d);
+  }
+  fill('fPlatform',["全部","Express","HKTVmall"]);
+  fill('fTeam',["全部","Express車隊","HKTVmall車隊"]);
+  const dates=ROWS.map(r=>r.delivery_date_norm).filter(Boolean).sort();
+  if(dates.length){document.getElementById('fFrom').value=dates[0];document.getElementById('fTo').value=dates[dates.length-1];}
+}
+function fill(id,arr){const s=document.getElementById(id);s.innerHTML='';arr.forEach(v=>{const o=document.createElement('option');o.value=o.textContent=v;s.appendChild(o);});}
+function toggleAll(v){document.querySelectorAll('.reasonCb').forEach(c=>c.checked=v);}
+
+let LAST=[];
+function runAnalyze(){
+  const selected=new Set([...document.querySelectorAll('.reasonCb:checked')].map(c=>c.value));
+  const plat=document.getElementById('fPlatform').value;
+  const team=document.getElementById('fTeam').value;
+  const from=document.getElementById('fFrom').value;
+  const to=document.getElementById('fTo').value;
+  let d=ROWS.filter(r=>{
+    if(plat!=="全部"&&r.platform!==plat)return false;
+    if(team!=="全部"&&r.carline_team!==team)return false;
+    if(from&&r.delivery_date_norm<normDate(from))return false;
+    if(to&&r.delivery_date_norm>normDate(to))return false;
+    return true;
+  });
+  const denom={}, numer={}, idmap={};
+  d.forEach(r=>{
+    denom[r.sku_name]=(denom[r.sku_name]||0)+r.sold_qty;
+    if(!idmap[r.sku_name])idmap[r.sku_name]=new Set();
+    if(r.sku_id)idmap[r.sku_name].add(r.sku_id);
+    if(selected.has(r.reason)) numer[r.sku_name]=(numer[r.sku_name]||0)+r.refund_qty;
+  });
+  LAST=Object.keys(denom).map(name=>{
+    const sold=denom[name], cancelled=numer[name]||0;
+    const rate=sold>0?(cancelled/sold*100):0;
+    return {sku_id:[...idmap[name]].join(', '),sku_name:name,
+            sold_qty:+sold.toFixed(2),cancelled_qty:+cancelled.toFixed(2),
+            cancellation_rate:+rate.toFixed(2)};
+  }).sort((a,b)=>b.cancellation_rate-a.cancellation_rate);
+  renderTable();renderChart();
+  document.getElementById('expBtn').disabled=LAST.length===0;
+}
+function renderTable(){
+  const t=document.getElementById('resultTable');
+  let h='<tr><th>SKU ID</th><th>SKU 名稱</th><th>出售量</th><th>取消量</th><th>取消率 %</th></tr>';
+  LAST.forEach(r=>{h+='<tr><td>'+r.sku_id+'</td><td>'+r.sku_name+'</td><td>'+r.sold_qty+'</td><td>'+r.cancelled_qty+'</td><td>'+r.cancellation_rate+'</td></tr>';});
+  t.innerHTML=h;
+  document.getElementById('tableInfo').textContent='共 '+LAST.length+' 個 SKU';
+  document.getElementById('tableCard').style.display='block';
+}
+let chartObj=null;
+function renderChart(){
+  const top=LAST.slice(0,15);
+  document.getElementById('chartCard').style.display= top.length?'block':'none';
+  const ctx=document.getElementById('chart');
+  if(chartObj)chartObj.destroy();
+  chartObj=new Chart(ctx,{type:'bar',
+    data:{labels:top.map(r=>r.sku_name.slice(0,20)),
+      datasets:[{label:'取消率 %',data:top.map(r=>r.cancellation_rate),backgroundColor:'#2563eb'}]},
+    options:{indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{beginAtZero:true}}}});
+}
+function exportCsv(){
+  const rows=[["SKU ID","SKU 名稱","出售量","取消量","取消率 %"],
+    ...LAST.map(r=>[r.sku_id,r.sku_name,r.sold_qty,r.cancelled_qty,r.cancellation_rate])];
+  const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const blob=new Blob(["\ufeff"+csv],{type:'text/csv'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='cancellation_report.csv';a.click();
+}
+<\/script>
+</body>
+</html>
