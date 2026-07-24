@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>貨品取消率分析</title>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root{--bg:#0f1720;--panel:#152230;--panel2:#1b2b3a;--line:#26374a;--txt:#e6edf3;--mut:#8aa0b3;--grn:#3fb950;--grnb:#2ea043;--acc:#f0a020;--red:#f85149;}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,"Microsoft JhengHei",sans-serif;background:var(--bg);color:var(--txt);font-size:13px}
+.layout{display:flex;min-height:100vh}
+.side{width:340px;flex:0 0 340px;background:var(--panel);border-right:1px solid var(--line);padding:16px;overflow-y:auto;height:100vh;position:sticky;top:0}
+.main{flex:1;padding:16px 22px;overflow-x:auto}
+h1{font-size:18px;margin:0 0 2px}
+.sub{color:var(--mut);font-size:12px;margin-bottom:14px}
+h2{font-size:14px;color:var(--acc);margin:18px 0 8px;border-bottom:1px solid var(--line);padding-bottom:4px}
+.side h3{font-size:13px;color:var(--grn);margin:16px 0 6px}
+label{font-size:12px}
+input,select,button{font-family:inherit}
+input[type=text],input[type=date],select{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:7px 8px;font-size:12px;margin-top:3px}
+.btn{background:var(--grnb);color:#fff;border:0;border-radius:6px;padding:9px 12px;font-size:13px;cursor:pointer;width:100%;margin-top:8px}
+.btn:hover{background:var(--grn)}
+.btn.sec{background:transparent;border:1px solid var(--grn);color:var(--grn);width:auto;padding:5px 10px;margin-top:0}
+.btn.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--mut);width:auto;padding:5px 10px}
+.chk{display:flex;gap:6px;align-items:flex-start;margin:4px 0;font-size:12px;line-height:1.3}
+.chk input{margin-top:2px}
+.twobtn{display:flex;gap:6px;margin:6px 0}
+.twobtn .btn{margin-top:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
+.cards{display:flex;flex-wrap:wrap;gap:14px;margin-bottom:16px}
+.kpi{flex:1;min-width:150px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.kpi .lab{color:var(--mut);font-size:12px}
+.kpi .val{font-size:26px;font-weight:700;margin-top:4px}
+.kpi .val.red{color:var(--red)}
+table{border-collapse:collapse;width:100%;font-size:12px}
+th,td{border-bottom:1px solid var(--line);padding:7px 8px;text-align:right}
+th:nth-child(2),td:nth-child(2),th:first-child,td:first-child{text-align:left}
+thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(--panel)}
+.scroll{max-height:360px;overflow:auto}
+.tabs{display:flex;gap:18px;border-bottom:1px solid var(--line);margin-bottom:16px}
+.tab{padding:8px 2px;cursor:pointer;color:var(--mut);border-bottom:2px solid transparent;font-size:14px}
+.tab.on{color:var(--grn);border-bottom-color:var(--grn)}
+.rate-hi{color:var(--red);font-weight:600}
+.rate-md{color:var(--acc);font-weight:600}
+.status{color:var(--grn);font-size:12px;margin-top:6px}
+.muted{color:var(--mut);font-size:12px}
+.login-wrap{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:50}
+.login-box{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:26px;width:300px}
+.login-box h3{margin:0 0 14px;text-align:center}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:2px}
+.split .h{grid-column:span 3}
+.thin th,.thin td{padding:6px 6px}
+</style>
+</head>
+<body>
+<div class="login-wrap" id="login">
+  <div class="login-box">
+    <h3>請登入</h3>
+    <input type="text" id="user" placeholder="用戶名">
+    <input type="text" id="pw" placeholder="密碼" style="-webkit-text-security:disc">
+    <button class="btn" id="loginBtn">登入</button>
+    <div class="status" id="loginErr" style="color:var(--red)"></div>
+  </div>
+</div>
+
+<div class="layout" id="app" style="display:none">
+  <aside class="side">
+    <h1>貨品取消率分析</h1>
+    <div class="sub" id="srcStatus">未載入</div>
+
+    <h3>資料來源</h3>
+    <select id="srcMode">
+      <option value="default">讀取預設 Google Sheet</option>
+      <option value="url">貼 Google Sheet 連結</option>
+      <option value="csv">上載 CSV</option>
+    </select>
+    <input type="text" id="sheetUrl" placeholder="貼 Google Sheet 連結" style="display:none">
+    <input type="file" id="csvFile" accept=".csv" style="display:none">
+    <button class="btn" id="loadBtn">載入資料</button>
+
+    <h3>分析設定</h3>
+    <div class="twobtn"><button class="btn sec" id="rAll">全選</button><button class="btn ghost" id="rNone">全不選</button></div>
+    <div style="font-size:11px;color:var(--mut);margin-top:8px">客人自報</div>
+    <div id="selfBox"></div>
+    <div style="font-size:11px;color:var(--mut);margin-top:8px">客服處理</div>
+    <div id="csBox"></div>
+
+    <h3>平台</h3>
+    <select id="fPlatform"><option value="">全部</option><option>Express</option><option>HKTVmall</option></select>
+    <h3>車隊</h3>
+    <select id="fTeam"></select>
+
+    <h3>送貨日期</h3>
+    <label>由</label><input type="date" id="fFrom">
+    <label>至</label><input type="date" id="fTo">
+
+    <button class="btn" id="analyzeBtn" style="margin-top:14px">分析</button>
+  </aside>
+
+  <main class="main">
+    <div class="tabs">
+      <div class="tab on" data-tab="main">主要分析</div>
+      <div class="tab" data-tab="detail">Order 明細</div>
+    </div>
+
+    <div id="tab-main">
+      <div class="cards">
+        <div class="kpi"><div class="lab">SKU 數目</div><div class="val" id="kSku">-</div></div>
+        <div class="kpi"><div class="lab">總出售量</div><div class="val" id="kSold">-</div></div>
+        <div class="kpi"><div class="lab">總取消/退款量</div><div class="val" id="kCancel">-</div></div>
+        <div class="kpi"><div class="lab">整體取消率</div><div class="val red" id="kRate">-</div></div>
+      </div>
+
+      <div class="card">
+        <h2>Top 15 高取消率 SKU</h2>
+        <canvas id="chart" height="120"></canvas>
+      </div>
+
+      <div class="card">
+        <h2>重點關注 SKU</h2>
+        <div class="muted">出售量 &gt; <input type="text" id="thVol" value="100" style="width:70px;display:inline-block"> 且 取消率 &gt; <input type="text" id="thRate" value="2" style="width:60px;display:inline-block"> % <button class="btn sec" id="applyTh">套用</button></div>
+        <div class="muted" id="thCount" style="margin:8px 0"></div>
+        <button class="btn ghost" id="expFocus">匯出重點 CSV</button>
+        <div class="scroll" style="margin-top:8px"><table class="thin" id="focusTable"></table></div>
+      </div>
+
+      <div class="card">
+        <h2>貨品類別取消率</h2>
+        <button class="btn ghost" id="expCat">匯出類別 CSV</button>
+        <div class="scroll" style="margin-top:8px"><table class="thin" id="catTable"></table></div>
+      </div>
+
+      <div class="card">
+        <h2>車隊對比 (重點 SKU)</h2>
+        <div class="muted">每個類別兩個車隊各自獨立計取消率。</div>
+        <button class="btn ghost" id="expTeam" style="margin-top:6px">匯出車隊對比 CSV</button>
+        <div class="scroll" style="margin-top:8px"><table class="thin" id="teamTable"></table></div>
+      </div>
+    </div>
+
+    <div id="tab-detail" style="display:none">
+      <div class="card">
+        <h2>Order 明細 (跟進用)</h2>
+        <select id="odSku"><option value="">全部 SKU</option></select>
+        <input type="text" id="odKw" placeholder="再篩 SKU 名稱關鍵字 (可留空)" style="margin-top:6px">
+        <button class="btn sec" id="loadDetail" style="margin-top:8px">載入明細</button>
+        <button class="btn ghost" id="expDetail" style="margin-top:8px">匯出明細 CSV</button>
+        <div class="scroll" style="margin-top:8px"><table class="thin" id="detailTable"></table></div>
+      </div>
+    </div>
+  </main>
+</div>
+<script>
+
+const SETTINGS = {
+  google_sheets: { spreadsheet_id: "1y4sZs2yvqZZ2foa27AvJOt19Pg4lvDHzfnZstAQ4zQU", gid: "0" },
+  columns: { delivery_date:"delivery_date", order_no:"order_number", carline:"carline_code", merchant:"merchant_name", sku_id:"sku_id",
+             sku_name:"sku_name_chi", cancel_type:"sku_cancel_reason", type:"express_main_category_name_zh",
+             sold_qty:"quantity", refund_qty:"refund_quantity" },
+  logic: { express_carline_prefix:"WM", express_order_prefix:"M" }
+};
+const APP_USER="admin";  // NOTE: replace with your real credentials handling
+let ROWS=[]; let VIEW=[]; let CHART=null;
+const $=id=>document.getElementById(id);
+const C=SETTINGS.columns, L=SETTINGS.logic;
+
+// ---- login (kept simple; you enter creds) ----
+$("loginBtn").onclick=()=>{
+  // Basic gate only; adjust to your auth. Accept any non-empty for demo parity with static tool.
+  if($("user").value.trim() && $("pw").value.trim()){ $("login").style.display="none"; $("app").style.display="flex"; }
+  else $("loginErr").textContent="請輸入用戶名同密碼";
+};
+
+// ---- source mode ----
+$("srcMode").onchange=e=>{
+  $("sheetUrl").style.display = e.target.value==="url"?"block":"none";
+  $("csvFile").style.display = e.target.value==="csv"?"block":"none";
+};
+
+function csvUrl(sid,gid){return "https://docs.google.com/spreadsheets/d/"+sid+"/export?format=csv&gid="+(gid||"0");}
+function fetchCsv(url){return new Promise((res,rej)=>{Papa.parse(url,{download:true,header:true,skipEmptyLines:true,complete:r=>res(r.data),error:rej});});}
+function fetchCsvFile(file){return new Promise((res,rej)=>{Papa.parse(file,{header:true,skipEmptyLines:true,complete:r=>res(r.data),error:rej});});}
+
+$("loadBtn").onclick=async()=>{
+  const mode=$("srcMode").value;
+  $("srcStatus").textContent="載入中…";
+  try{
+    let recs;
+    if(mode==="default") recs=await fetchCsv(csvUrl(SETTINGS.google_sheets.spreadsheet_id,SETTINGS.google_sheets.gid));
+    else if(mode==="url"){ const u=$("sheetUrl").value.trim(); const sid=(u.match(/\/d\/([a-zA-Z0-9_-]+)/)||[])[1]; const gid=(u.match(/[#&]gid=(\d+)/)||[])[1]||"0"; recs=await fetchCsv(csvUrl(sid,gid)); }
+    else { recs=await fetchCsvFile($("csvFile").files[0]); }
+    ingest(recs);
+    $("srcStatus").textContent="已載入 "+ROWS.length+" 行";
+    buildFilters();
+  }catch(err){ $("srcStatus").textContent="載入失敗: "+err.message; }
+};
+
+function toNum(v){const n=parseFloat(String(v).replace(/[^0-9.\-]/g,""));return isNaN(n)?0:n;}
+function ingest(recs){
+  ROWS=[];
+  for(const rec of recs){
+    if(!rec) continue;
+    const g=k=>(rec[C[k]]??"");
+    const order=String(g("order_no"));
+    if(order.trim()===""&&String(g("sku_id")).trim()===""&&String(g("sku_name")).trim()==="") continue;
+    const platform = order.trim().startsWith(L.express_order_prefix)?"Express":"HKTVmall";
+    const carRaw=String(g("carline"));
+    let team="HKTVmall車隊";
+    if(carRaw.includes("-")){ const after=carRaw.split("-")[1].trim(); if(after.slice(0,2).toUpperCase()===L.express_carline_prefix) team="Express車隊"; }
+    ROWS.push({
+      order, platform, team, carline:carRaw,
+      sku_id:String(g("sku_id")), sku_name:String(g("sku_name")),
+      type:String(g("type"))||"(未分類)",
+      cancel_type:String(g("cancel_type")).trim(),
+      sold:toNum(g("sold_qty")), refund:toNum(g("refund_qty")),
+      date:String(g("delivery_date"))
+    });
+  }
+}
+
+// ---- reason (cancel_type) checkboxes = 分析設定 ----
+function buildFilters(){
+  const reasons=[...new Set(ROWS.map(r=>r.cancel_type).filter(x=>x!==""))].sort();
+  const self=["DAMAGE","MISSING_ITEM","QUALITY","WRONG_ITEM"];
+  const selfR=reasons.filter(r=>self.includes(r));
+  const csR=reasons.filter(r=>!self.includes(r));
+  const mk=(box,arr)=>{ box.innerHTML=""; arr.forEach(r=>{ const id="ck_"+btoa(unescape(encodeURIComponent(r))).replace(/=/g,""); box.insertAdjacentHTML("beforeend",'<label class="chk"><input type="checkbox" checked value="'+r.replace(/"/g,"&quot;")+'"> '+r+'</label>'); }); };
+  mk($("selfBox"),selfR.length?selfR:self);
+  mk($("csBox"),csR);
+  const teams=[...new Set(ROWS.map(r=>r.team))];
+  $("fTeam").innerHTML='<option value="">全部</option>'+teams.map(t=>'<option>'+t+'</option>').join("");
+  const skus=[...new Set(ROWS.map(r=>r.sku_id).filter(Boolean))];
+  $("odSku").innerHTML='<option value="">全部 SKU</option>'+skus.map(s=>'<option>'+s+'</option>').join("");
+}
+$("rAll").onclick=()=>document.querySelectorAll("#selfBox input,#csBox input").forEach(c=>c.checked=true);
+$("rNone").onclick=()=>document.querySelectorAll("#selfBox input,#csBox input").forEach(c=>c.checked=false);
+
+function selectedReasons(){ return [...document.querySelectorAll("#selfBox input:checked,#csBox input:checked")].map(c=>c.value); }
+function filtered(){
+  const plat=$("fPlatform").value, team=$("fTeam").value, from=$("fFrom").value, to=$("fTo").value;
+  const rs=selectedReasons();
+  return ROWS.filter(r=>{
+    if(plat&&r.platform!==plat) return false;
+    if(team&&r.team!==team) return false;
+    if(from&&r.date&&r.date<from) return false;
+    if(to&&r.date&&r.date>to) return false;
+    return true;
+  });
+}
+// a row counts as cancelled if its cancel_type is among the selected reasons OR refund>0
+function isCancelled(r,rs){ return (rs.length? rs.includes(r.cancel_type):true) && r.refund>0; }
+
+$("analyzeBtn").onclick=runAnalyze;
+function runAnalyze(){
+  VIEW=filtered();
+  const rs=selectedReasons();
+  // aggregate by SKU
+  const bySku={};
+  let totSold=0,totCancel=0;
+  VIEW.forEach(r=>{
+    const k=r.sku_id||r.sku_name;
+    if(!bySku[k]) bySku[k]={sku_id:r.sku_id,name:r.sku_name,sold:0,cancel:0};
+    bySku[k].sold+=r.sold; totSold+=r.sold;
+    const c=isCancelled(r,rs)?r.refund:0;
+    bySku[k].cancel+=c; totCancel+=c;
+  });
+  const arr=Object.values(bySku).map(o=>({...o,rate:o.sold?o.cancel/o.sold*100:0}));
+  $("kSku").textContent=arr.length;
+  $("kSold").textContent=Math.round(totSold).toLocaleString();
+  $("kCancel").textContent=Math.round(totCancel).toLocaleString();
+  $("kRate").textContent=(totSold?(totCancel/totSold*100):0).toFixed(2)+"%";
+  window.__lastArr=arr; renderChart(arr); renderFocus(arr); renderCat(rs); renderTeam(rs);
+}
+function fmtRate(x){return x.toFixed(2)+"%";}
+function rateCls(x){return x>=5?"rate-hi":x>=2?"rate-md":"";}
+function renderChart(arr){
+  const top=[...arr].sort((a,b)=>b.rate-a.rate).slice(0,15);
+  if(CHART)CHART.destroy();
+  CHART=new Chart($("chart"),{type:"bar",data:{labels:top.map(o=>(o.name||o.sku_id).slice(0,14)),datasets:[{data:top.map(o=>o.rate),backgroundColor:top.map(o=>o.rate>=5?"#f0a020":"#3fb950")}]},options:{indexAxis:"y",plugins:{legend:{display:false}},scales:{x:{ticks:{color:"#8aa0b3"}},y:{ticks:{color:"#e6edf3"}}}}});
+}
+function renderFocus(arr){
+  const v=parseFloat($("thVol").value)||0, rt=parseFloat($("thRate").value)||0;
+  const f=arr.filter(o=>o.sold>v&&o.rate>rt).sort((a,b)=>b.rate-a.rate);
+  $("thCount").innerHTML='符合「出售量 &gt; '+v+' 且 取消率 &gt; '+rt+'%」嘅 SKU 共 <b>'+f.length+'</b> 個';
+  let h="<thead><tr><th>SKU ID</th><th>SKU 名稱</th><th>出售量</th><th>取消/退款量</th><th>取消率 %</th></tr></thead><tbody>";
+  f.forEach(o=>{h+="<tr><td>"+o.sku_id+"</td><td>"+o.name+"</td><td>"+Math.round(o.sold)+"</td><td>"+Math.round(o.cancel)+"</td><td class='"+rateCls(o.rate)+"'>"+fmtRate(o.rate)+"</td></tr>";});
+  $("focusTable").innerHTML=h+"</tbody>";
+  window.__focus=f;
+}
+$("applyTh").onclick=()=>{ if(window.__lastArr) renderFocus(window.__lastArr); };
+function renderCat(rs){
+  const byCat={};
+  VIEW.forEach(r=>{ const k=r.type||"(未分類)"; if(!byCat[k])byCat[k]={sold:0,cancel:0}; byCat[k].sold+=r.sold; byCat[k].cancel+=isCancelled(r,rs)?r.refund:0; });
+  const arr=Object.entries(byCat).map(([k,o])=>({cat:k,...o,rate:o.sold?o.cancel/o.sold*100:0})).sort((a,b)=>b.rate-a.rate);
+  let h="<thead><tr><th>貨品類別</th><th>出售量</th><th>取消/退款量</th><th>取消率 %</th></tr></thead><tbody>";
+  arr.forEach(o=>{h+="<tr><td>"+o.cat+"</td><td>"+Math.round(o.sold)+"</td><td>"+Math.round(o.cancel)+"</td><td class='"+rateCls(o.rate)+"'>"+fmtRate(o.rate)+"</td></tr>";});
+  $("catTable").innerHTML=h+"</tbody>"; window.__cat=arr;
+}
+function renderTeam(rs){
+  const byCat={};
+  VIEW.forEach(r=>{
+    const k=r.type||"(未分類)"; const t=r.team.indexOf("Express")>=0?"e":"h";
+    if(!byCat[k])byCat[k]={eSold:0,eC:0,hSold:0,hC:0};
+    const c=isCancelled(r,rs)?r.refund:0;
+    if(t==="e"){byCat[k].eSold+=r.sold;byCat[k].eC+=c;}else{byCat[k].hSold+=r.sold;byCat[k].hC+=c;}
+  });
+  const arr=Object.entries(byCat).map(([k,o])=>({cat:k,...o,eR:o.eSold?o.eC/o.eSold*100:0,hR:o.hSold?o.hC/o.hSold*100:0}));
+  arr.sort((a,b)=>Math.max(b.eR,b.hR)-Math.max(a.eR,a.hR));
+  let h="<thead><tr><th rowspan=2>貨品類別</th><th colspan=3 style='text-align:center'>Express 車隊</th><th colspan=3 style='text-align:center'>HKTVmall 車隊</th></tr><tr><th>出售</th><th>取消</th><th>率%</th><th>出售</th><th>取消</th><th>率%</th></tr></thead><tbody>";
+  arr.forEach(o=>{h+="<tr><td>"+o.cat+"</td><td>"+Math.round(o.eSold)+"</td><td>"+Math.round(o.eC)+"</td><td class='"+rateCls(o.eR)+"'>"+fmtRate(o.eR)+"</td><td>"+Math.round(o.hSold)+"</td><td>"+Math.round(o.hC)+"</td><td class='"+rateCls(o.hR)+"'>"+fmtRate(o.hR)+"</td></tr>";});
+  $("teamTable").innerHTML=h+"</tbody>"; window.__team=arr;
+}
+// keep last arr for threshold re-apply
+const _origRun=runAnalyze;
+
+// ---- tabs ----
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
+  document.querySelectorAll(".tab").forEach(x=>x.classList.remove("on")); t.classList.add("on");
+  $("tab-main").style.display=t.dataset.tab==="main"?"block":"none";
+  $("tab-detail").style.display=t.dataset.tab==="detail"?"block":"none";
+});
+
+// ---- order detail ----
+$("loadDetail").onclick=()=>{
+  const rs=selectedReasons(); const sku=$("odSku").value; const kw=$("odKw").value.trim();
+  const rows=filtered().filter(r=> isCancelled(r,rs) && (!sku||r.sku_id===sku) && (!kw||r.sku_name.includes(kw)));
+  let h="<thead><tr><th>訂單編號</th><th>SKU 名稱</th><th>SKU ID</th><th>退款件數</th><th>原因</th><th>平台</th><th>車隊</th><th>車隊代碼</th><th>送貨日期</th></tr></thead><tbody>";
+  rows.slice(0,1000).forEach(r=>{h+="<tr><td>"+r.order+"</td><td>"+r.sku_name+"</td><td>"+r.sku_id+"</td><td>"+Math.round(r.refund)+"</td><td>"+r.cancel_type+"</td><td>"+r.platform+"</td><td>"+r.team+"</td><td>"+r.carline+"</td><td>"+r.date+"</td></tr>";});
+  $("detailTable").innerHTML=h+"</tbody>"; window.__detail=rows;
+};
+
+// ---- CSV export helpers ----
+function dl(name,rows){const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(",")).join("\n");const b=new Blob([\ufeff+csv],{type:"text/csv"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=name;a.click();}
+$("expFocus").onclick=()=>dl("focus.csv",[["SKU ID","SKU 名稱","出售量","取消量","取消率%"],...(window.__focus||[]).map(o=>[o.sku_id,o.name,o.sold,o.cancel,o.rate.toFixed(2)])]);
+$("expCat").onclick=()=>dl("category.csv",[["類別","出售量","取消量","取消率%"],...(window.__cat||[]).map(o=>[o.cat,o.sold,o.cancel,o.rate.toFixed(2)])]);
+$("expTeam").onclick=()=>dl("team.csv",[["類別","E出售","E取消","E率%","H出售","H取消","H率%"],...(window.__team||[]).map(o=>[o.cat,o.eSold,o.eC,o.eR.toFixed(2),o.hSold,o.hC,o.hR.toFixed(2)])]);
+$("expDetail").onclick=()=>dl("detail.csv",[["訂單編號","SKU 名稱","SKU ID","退款件數","原因","平台","車隊","車隊代碼","送貨日期"],...(window.__detail||[]).map(r=>[r.order,r.sku_name,r.sku_id,r.refund,r.cancel_type,r.platform,r.team,r.carline,r.date])]);
+
+// store arr for threshold reapply
+const _ra=runAnalyze;
+window.runAnalyze=function(){_ra();window.__lastArr=Object.values({});};
+
+</script>
+</body>
+</html>
