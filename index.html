@@ -79,6 +79,16 @@
     </div>
   </div>
 
+  <div class="card" id="summaryCard" style="display:none">
+    <h3>總覽摘要</h3>
+    <div id="summaryBox" style="display:flex;flex-wrap:wrap;gap:16px"></div>
+  </div>
+  <div class="card" id="catCard" style="display:none">
+    <h3>各類別 (Type) 取消率</h3>
+    <div style="overflow:auto;max-height:360px;margin-top:8px">
+      <table id="catTable"></table>
+    </div>
+  </div>
   <div class="card" id="chartCard" style="display:none">
     <h3>Top 15 取消率</h3>
     <canvas id="chart" height="120"></canvas>
@@ -230,7 +240,7 @@ function buildFilters(){
 function fill(id,arr){const s=document.getElementById(id);s.innerHTML='';arr.forEach(v=>{const o=document.createElement('option');o.value=o.textContent=v;s.appendChild(o);});}
 function toggleAll(v){document.querySelectorAll('.reasonCb').forEach(c=>c.checked=v);}
 
-let LAST=[];
+let LAST=[], CATLAST=[], SUMMARY=null;
 function runAnalyze(){
   const selected=new Set([...document.querySelectorAll('.reasonCb:checked')].map(c=>c.value));
   const plat=document.getElementById('fPlatform').value;
@@ -258,8 +268,40 @@ function runAnalyze(){
             sold_qty:+sold.toFixed(2),cancelled_qty:+cancelled.toFixed(2),
             cancellation_rate:+rate.toFixed(2)};
   }).sort((a,b)=>b.cancellation_rate-a.cancellation_rate);
+  // ---- summary + category ----
+  let totSold=0, totCancelled=0;
+  LAST.forEach(r=>{ totSold+=r.sold_qty; });
+  const catDenom={}, catNumer={};
+  d.forEach(r=>{
+    const ty = r.type || "(未分類)";
+    catDenom[ty]=(catDenom[ty]||0)+r.sold_qty;
+    if(selected.has(r.reason)){ catNumer[ty]=(catNumer[ty]||0)+r.refund_qty; totCancelled+=r.refund_qty; }
+  });
+  const overallRate = totSold>0 ? (totCancelled/totSold*100) : 0;
+  SUMMARY = { skuCount: LAST.length, totSold:+totSold.toFixed(2), totCancelled:+totCancelled.toFixed(2), overallRate:+overallRate.toFixed(2) };
+  CATLAST = Object.keys(catDenom).map(ty=>{
+    const sold=catDenom[ty], cancelled=catNumer[ty]||0;
+    const rate = sold>0 ? (cancelled/sold*100) : 0;
+    return {type:ty, sold_qty:+sold.toFixed(2), cancelled_qty:+cancelled.toFixed(2), cancellation_rate:+rate.toFixed(2)};
+  }).sort((a,b)=>b.cancellation_rate-a.cancellation_rate);
+  renderSummary();renderCat();
   renderTable();renderChart();
   document.getElementById('expBtn').disabled=LAST.length===0;
+}
+function renderSummary(){
+  if(!SUMMARY){document.getElementById("summaryCard").style.display="none";return;}
+  const cards=[["SKU 數目",SUMMARY.skuCount],["總出售量",SUMMARY.totSold],["總取消量",SUMMARY.totCancelled],["整體取消率 %",SUMMARY.overallRate]];
+  document.getElementById("summaryBox").innerHTML = cards.map(c=>
+    '<div style="flex:1;min-width:150px;background:#f0f4ff;border:1px solid #dbe4ff;border-radius:8px;padding:14px"><div style="font-size:13px;color:#555">'+c[0]+'</div><div style="font-size:26px;font-weight:700;color:#1f2937">'+c[1]+'</div></div>'
+  ).join("");
+  document.getElementById("summaryCard").style.display="block";
+}
+function renderCat(){
+  const t=document.getElementById("catTable");
+  let h='<tr><th>類別 Type</th><th>出售量</th><th>取消量</th><th>取消率 %</th></tr>';
+  CATLAST.forEach(r=>{h+='<tr><td>'+r.type+'</td><td>'+r.sold_qty+'</td><td>'+r.cancelled_qty+'</td><td>'+r.cancellation_rate+'</td></tr>';});
+  t.innerHTML=h;
+  document.getElementById("catCard").style.display = CATLAST.length ? "block" : "none";
 }
 function renderTable(){
   const t=document.getElementById('resultTable');
