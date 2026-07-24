@@ -279,7 +279,7 @@ function runAnalyze(){
 function fmtRate(x){return x.toFixed(2)+"%";}
 function rateCls(x){return x>=5?"rate-hi":x>=2?"rate-md":"";}
 function renderChart(arr){
-  const top=[...arr].sort((a,b)=>b.rate-a.rate).slice(0,15);
+  const _v=parseFloat($('thVol').value)||0,_rt=parseFloat($('thRate').value)||0;const top=[...arr].filter(o=>o.sold>_v&&o.rate>_rt).sort((a,b)=>b.rate-a.rate).slice(0,15);
   if(CHART)CHART.destroy();
   CHART=new Chart($("chart"),{type:"bar",data:{labels:top.map(o=>(o.name||o.sku_id).slice(0,14)),datasets:[{data:top.map(o=>o.rate),backgroundColor:top.map(o=>o.rate>=5?"#f0a020":"#3fb950")}]},options:{indexAxis:"y",plugins:{legend:{display:false}},scales:{x:{ticks:{color:"#8aa0b3"}},y:{ticks:{color:"#e6edf3"}}}}});
 }
@@ -292,7 +292,7 @@ function renderFocus(arr){
   $("focusTable").innerHTML=h+"</tbody>";
   window.__focus=f;
 }
-$("applyTh").onclick=()=>{ if(window.__lastArr) renderFocus(window.__lastArr); };
+$("applyTh").onclick=()=>{ if(window.__lastArr){ renderFocus(window.__lastArr); renderChart(window.__lastArr); }; };
 function renderCat(rs){
   const byCat={};
   VIEW.forEach(r=>{ const k=r.type||"(未分類)"; if(!byCat[k])byCat[k]={sold:0,cancel:0}; byCat[k].sold+=r.sold; byCat[k].cancel+=isCancelled(r,rs)?r.refund:0; });
