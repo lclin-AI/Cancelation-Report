@@ -272,12 +272,12 @@ function runAnalyze(){
   let totSold=0,totCancel=0;
   VIEW.forEach(r=>{
     const k=r.sku_id||r.sku_name;
-    if(!bySku[k]) bySku[k]={sku_id:r.sku_id,name:r.sku_name,sold:0,cancel:0};
-    bySku[k].sold+=r.sold; totSold+=r.sold;
+    if(!bySku[k]) bySku[k]={sku_id:r.sku_id,name:r.sku_name,sold:0,cancel:0,stores:{}};
+    bySku[k].sold+=r.sold; if(r.merchant) bySku[k].stores[r.merchant]=1; totSold+=r.sold;
     const c=isCancelled(r,rs)?r.refund:0;
     bySku[k].cancel+=c; totCancel+=c;
   });
-  const arr=Object.values(bySku).map(o=>({...o,rate:o.sold?o.cancel/o.sold*100:0}));
+  const arr=Object.values(bySku).map(o=>({...o,store:Object.keys(o.stores||{}).join(", "),rate:o.sold?o.cancel/o.sold*100:0}));
   $("kSku").textContent=arr.length.toLocaleString("en-US");
   $("kSold").textContent=Math.round(totSold).toLocaleString();
   $("kCancel").textContent=Math.round(totCancel).toLocaleString();
@@ -296,8 +296,8 @@ function renderFocus(arr){
   const v=parseFloat($("thVol").value)||0, rt=parseFloat($("thRate").value)||0;
   const f=arr.filter(o=>o.sold>v&&o.rate>rt).sort((a,b)=>b.rate-a.rate);
   $("thCount").innerHTML='符合「出售量 &gt; '+v+' 且 取消率 &gt; '+rt+'%」嘅 SKU 共 <b>'+f.length+'</b> 個';
-  let h="<thead><tr><th>SKU ID</th><th>SKU 名稱</th><th>出售量</th><th>取消/退款量</th><th>取消率 %</th></tr></thead><tbody>";
-  f.forEach(o=>{h+="<tr><td>"+o.sku_id+"</td><td>"+o.name+"</td><td>"+fmtN(o.sold)+"</td><td>"+fmtN(o.cancel)+"</td><td class='"+rateCls(o.rate)+"'>"+fmtRate(o.rate)+"</td></tr>";});
+  let h="<thead><tr><th>SKU ID</th><th>SKU 名稱</th><th>店舖</th><th>出售量</th><th>取消/退款量</th><th>取消率 %</th></tr></thead><tbody>";
+  f.forEach(o=>{h+="<tr><td>"+o.sku_id+"</td><td>"+o.name+"</td><td>"+(o.store||"")+"</td><td>"+fmtN(o.sold)+"</td><td>"+fmtN(o.cancel)+"</td><td class='"+rateCls(o.rate)+"'>"+fmtRate(o.rate)+"</td></tr>";});
   $("focusTable").innerHTML=h+"</tbody>";
   window.__focus=f;
 }
