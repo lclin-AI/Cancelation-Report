@@ -270,13 +270,14 @@ function runAnalyze(){
     bySku[k].cancel+=c; totCancel+=c;
   });
   const arr=Object.values(bySku).map(o=>({...o,rate:o.sold?o.cancel/o.sold*100:0}));
-  $("kSku").textContent=arr.length;
+  $("kSku").textContent=arr.length.toLocaleString("en-US");
   $("kSold").textContent=Math.round(totSold).toLocaleString();
   $("kCancel").textContent=Math.round(totCancel).toLocaleString();
   $("kRate").textContent=(totSold?(totCancel/totSold*100):0).toFixed(2)+"%";
   window.__lastArr=arr; renderChart(arr); renderFocus(arr); renderCat(rs); renderTeam(rs);
 }
-function fmtRate(x){return x.toFixed(2)+"%";}
+function fmtN(x){return Math.round(x).toLocaleString("en-US");}
+    function fmtRate(x){return x.toFixed(2)+"%";}
 function rateCls(x){return x>=5?"rate-hi":x>=2?"rate-md":"";}
 function renderChart(arr){
   const _v=parseFloat($('thVol').value)||0,_rt=parseFloat($('thRate').value)||0;const top=[...arr].filter(o=>o.sold>_v&&o.rate>_rt).sort((a,b)=>b.rate-a.rate).slice(0,15);
@@ -288,7 +289,7 @@ function renderFocus(arr){
   const f=arr.filter(o=>o.sold>v&&o.rate>rt).sort((a,b)=>b.rate-a.rate);
   $("thCount").innerHTML='符合「出售量 &gt; '+v+' 且 取消率 &gt; '+rt+'%」嘅 SKU 共 <b>'+f.length+'</b> 個';
   let h="<thead><tr><th>SKU ID</th><th>SKU 名稱</th><th>出售量</th><th>取消/退款量</th><th>取消率 %</th></tr></thead><tbody>";
-  f.forEach(o=>{h+="<tr><td>"+o.sku_id+"</td><td>"+o.name+"</td><td>"+Math.round(o.sold)+"</td><td>"+Math.round(o.cancel)+"</td><td class='"+rateCls(o.rate)+"'>"+fmtRate(o.rate)+"</td></tr>";});
+  f.forEach(o=>{h+="<tr><td>"+o.sku_id+"</td><td>"+o.name+"</td><td>"+fmtN(o.sold)+"</td><td>"+fmtN(o.cancel)+"</td><td class='"+rateCls(o.rate)+"'>"+fmtRate(o.rate)+"</td></tr>";});
   $("focusTable").innerHTML=h+"</tbody>";
   window.__focus=f;
 }
@@ -298,7 +299,7 @@ function renderCat(rs){
   VIEW.forEach(r=>{ const k=r.type||"(未分類)"; if(!byCat[k])byCat[k]={sold:0,cancel:0}; byCat[k].sold+=r.sold; byCat[k].cancel+=isCancelled(r,rs)?r.refund:0; });
   const arr=Object.entries(byCat).map(([k,o])=>({cat:k,...o,rate:o.sold?o.cancel/o.sold*100:0})).sort((a,b)=>b.rate-a.rate);
   let h="<thead><tr><th>貨品類別</th><th>出售量</th><th>取消/退款量</th><th>取消率 %</th></tr></thead><tbody>";
-  arr.forEach(o=>{h+="<tr><td>"+o.cat+"</td><td>"+Math.round(o.sold)+"</td><td>"+Math.round(o.cancel)+"</td><td class='"+rateCls(o.rate)+"'>"+fmtRate(o.rate)+"</td></tr>";});
+  arr.forEach(o=>{h+="<tr><td>"+o.cat+"</td><td>"+fmtN(o.sold)+"</td><td>"+fmtN(o.cancel)+"</td><td class='"+rateCls(o.rate)+"'>"+fmtRate(o.rate)+"</td></tr>";});
   $("catTable").innerHTML=h+"</tbody>"; window.__cat=arr;
 }
 function renderTeam(rs){
@@ -312,7 +313,7 @@ function renderTeam(rs){
   const arr=Object.entries(byCat).map(([k,o])=>({cat:k,...o,eR:o.eSold?o.eC/o.eSold*100:0,hR:o.hSold?o.hC/o.hSold*100:0}));
   arr.sort((a,b)=>Math.max(b.eR,b.hR)-Math.max(a.eR,a.hR));
   let h="<thead><tr><th rowspan=2>貨品類別</th><th colspan=3 style='text-align:center'>Express 車隊</th><th colspan=3 style='text-align:center'>HKTVmall 車隊</th></tr><tr><th>出售</th><th>取消</th><th>率%</th><th>出售</th><th>取消</th><th>率%</th></tr></thead><tbody>";
-  arr.forEach(o=>{h+="<tr><td>"+o.cat+"</td><td>"+Math.round(o.eSold)+"</td><td>"+Math.round(o.eC)+"</td><td class='"+rateCls(o.eR)+"'>"+fmtRate(o.eR)+"</td><td>"+Math.round(o.hSold)+"</td><td>"+Math.round(o.hC)+"</td><td class='"+rateCls(o.hR)+"'>"+fmtRate(o.hR)+"</td></tr>";});
+  arr.forEach(o=>{h+="<tr><td>"+o.cat+"</td><td>"+fmtN(o.eSold)+"</td><td>"+fmtN(o.eC)+"</td><td class='"+rateCls(o.eR)+"'>"+fmtRate(o.eR)+"</td><td>"+fmtN(o.hSold)+"</td><td>"+fmtN(o.hC)+"</td><td class='"+rateCls(o.hR)+"'>"+fmtRate(o.hR)+"</td></tr>";});
   $("teamTable").innerHTML=h+"</tbody>"; window.__team=arr;
 }
 // keep last arr for threshold re-apply
@@ -330,7 +331,7 @@ $("loadDetail").onclick=()=>{
   const rs=selectedReasons(); const sku=$("odSku").value; const kw=$("odKw").value.trim();
   const rows=filtered().filter(r=> isCancelled(r,rs) && (!sku||r.sku_id===sku) && (!kw||r.sku_name.includes(kw)));
   let h="<thead><tr><th>訂單編號</th><th>SKU 名稱</th><th>SKU ID</th><th>退款件數</th><th>原因</th><th>平台</th><th>車隊</th><th>車隊代碼</th><th>送貨日期</th></tr></thead><tbody>";
-  rows.slice(0,1000).forEach(r=>{h+="<tr><td>"+r.order+"</td><td>"+r.sku_name+"</td><td>"+r.sku_id+"</td><td>"+Math.round(r.refund)+"</td><td>"+r.cancel_type+"</td><td>"+r.platform+"</td><td>"+r.team+"</td><td>"+r.carline+"</td><td>"+r.date+"</td></tr>";});
+  rows.slice(0,1000).forEach(r=>{h+="<tr><td>"+r.order+"</td><td>"+r.sku_name+"</td><td>"+r.sku_id+"</td><td>"+fmtN(r.refund)+"</td><td>"+r.cancel_type+"</td><td>"+r.platform+"</td><td>"+r.team+"</td><td>"+r.carline+"</td><td>"+r.date+"</td></tr>";});
   $("detailTable").innerHTML=h+"</tbody>"; window.__detail=rows;
 };
 
