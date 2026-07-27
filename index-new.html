@@ -395,6 +395,34 @@ window.runAnalyze=function(){_ra();window.__lastArr=Object.values({});};
     loadBtn.onclick=function(ev){ if(sel&&sel.value==='drive'){ if(ev)ev.preventDefault(); loadFromDriveFolder(); return false; } if(typeof orig==='function') return orig.call(this,ev); };
   }
   if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', wire);} else { wire(); }
+  /* Auto-load latest Drive file once the app becomes visible after login */
+  (function(){
+    var done=false;
+    function appVisible(){
+      var login=q('login'), app=q('app');
+      var loginHidden = !login || getComputedStyle(login).display==='none' || login.offsetParent===null;
+      var appShown = app && getComputedStyle(app).display!=='none' && app.offsetParent!==null;
+      return loginHidden && appShown;
+    }
+    function tryAuto(){
+      if(done) return;
+      if(appVisible()){
+        done=true;
+        var sel=q('srcMode');
+        if(sel){ sel.value='drive'; }
+        loadFromDriveFolder();
+      }
+    }
+    var obs=new MutationObserver(tryAuto);
+    function startObs(){
+      var login=q('login'), app=q('app');
+      if(login) obs.observe(login,{attributes:true,attributeFilter:['style','class']});
+      if(app) obs.observe(app,{attributes:true,attributeFilter:['style','class']});
+      document.addEventListener('click', function(){ setTimeout(tryAuto, 400); }, true);
+      tryAuto();
+    }
+    if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', startObs);} else { startObs(); }
+  })();
 })();
 </script>
 
