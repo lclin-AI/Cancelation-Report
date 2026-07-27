@@ -412,7 +412,7 @@ function _finish(rows){
       r['Wet Market'] = r['merchant_name'] || r['carline_code'] || r['Wet Market'] || '';
     }
   }); }catch(_e){}
-  try{ ingest(rows); if(typeof runAnalyze==='function') runAnalyze();
+  try{ ingest(rows); if(typeof window.__setInvisibleRows==='function') window.__setInvisibleRows(rows); if(typeof runAnalyze==='function') runAnalyze();
     say('已載入最新檔案：'+latest.name+'（'+rows.length+' 列，'+(latest.modifiedTime||'')+'）');
   }catch(e){ say('處理失敗：'+e.message); }
 }
