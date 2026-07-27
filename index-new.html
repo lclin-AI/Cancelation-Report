@@ -165,19 +165,21 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
           <div><label>取消率 &gt; (%)</label><input type="text" id="ivRate" value="1" style="width:80px"></div>
           <div><label>出售量 &gt; </label><input type="text" id="ivSold" value="50" style="width:80px"></div>
           <button class="btn sec" id="ivApply" style="width:auto;padding:6px 14px">套用</button>
-          <button class="btn ghost" id="ivExp" style="width:auto;padding:6px 14px">匯出 Invisible List CSV</button>
+          <button class="btn ghost" id="ivExp" style="width:auto;padding:6px 14px">匯出 Invisible List CSV</button><button class="btn sec" id="ivFetchStatus" style="width:auto;padding:6px 14px">查詢狀態</button><button class="btn" id="ivSetInvisible" style="width:auto;padding:6px 14px">設為Invisible (已選)</button>
         </div>
         <div id="ivInfo" style="font-size:12px;color:var(--mut);margin-bottom:6px"></div>
         <div style="overflow:auto;max-height:70vh">
           <table class="thin" id="ivTable" style="width:100%;border-collapse:collapse">
             <thead><tr>
+              <th style="width:32px;text-align:center"><input type="checkbox" id="ivSelAll" title="選"></th>
               <th data-sort="wet_market" style="cursor:pointer;text-align:left">街市 Wet Market</th>
               <th data-sort="sku_id" style="cursor:pointer;text-align:left">SKU ID</th>
               <th data-sort="sku_name" style="cursor:pointer;text-align:left">SKU 名稱</th>
               <th data-sort="sold" style="cursor:pointer;text-align:right">出售量</th>
               <th data-sort="cancel" style="cursor:pointer;text-align:right">取消/退款量</th>
               <th data-sort="rate" style="cursor:pointer;text-align:right">取消率 %</th>
-            </tr></thead>
+            
+              <th data-sort="_status" style="cursor:pointer;text-align:center">顯示於Customer App</th></tr></thead>
             <tbody id="ivBody"></tbody>
           </table>
         </div>
@@ -502,12 +504,12 @@ if(_isXlsx){
     var rateTh=num((q("ivRate")||{}).value)||0, soldTh=num((q("ivSold")||{}).value)||0;
     var list=compute().filter(function(o){ return o.rate>rateTh && o.sold>soldTh; });
     list.sort(function(a,b){ var av=a[sortKey], bv=b[sortKey]; if(typeof av==="string"){ return sortDir*String(av).localeCompare(String(bv)); } return sortDir*((av||0)-(bv||0)); });
-    CURRENT=list;
+    CURRENT=list; window.__IV_CURRENT=list;
     var body=q("ivBody"); if(!body) return; var html="";
     for(var i=0;i<list.length;i++){ var o=list[i];
-      html+="<tr><td>"+esc(o.wet_market)+"</td><td>"+esc(o.sku_id)+"</td><td>"+esc(o.sku_name)+"</td><td style=\"text-align:right\">"+o.sold+"</td><td style=\"text-align:right\">"+o.cancel+"</td><td style=\"text-align:right;"+(o.rate>=5?"color:var(--red);font-weight:600":(o.rate>=2?"color:var(--acc);font-weight:600":""))+"\">"+o.rate.toFixed(2)+"</td></tr>";
+      html+="<tr><td style=\"text-align:center\"><input type=\"checkbox\" class=\"ivChk\" data-sku=\""+esc(o.sku_id)+"\"></td><td>"+esc(o.wet_market)+"</td><td>"+esc(o.sku_id)+"</td><td>"+esc(o.sku_name)+"</td><td style=\"text-align:right\">"+o.sold+"</td><td style=\"text-align:right\">"+o.cancel+"</td><td style=\"text-align:right;"+(o.rate>=5?"color:var(--red);font-weight:600":(o.rate>=2?"color:var(--acc);font-weight:600":""))+"\">"+o.rate.toFixed(2)+"</td><td class=\"ivStatus\" data-sku=\""+esc(o.sku_id)+"\" style=\"text-align:center;color:var(--mut)\">-</td></tr>";
     }
-    body.innerHTML=html||("<tr><td colspan=\"6\" style=\"color:var(--mut);padding:10px\">no items (rate > "+rateTh+"% and sold > "+soldTh+")</td></tr>");
+    body.innerHTML=html||("<tr><td colspan=\"8\" style=\"color:var(--mut);padding:10px\">no items (rate > "+rateTh+"% and sold > "+soldTh+")</td></tr>");
     var info=q("ivInfo"); if(info){ info.textContent="Matched: "+list.length+" items (rate > "+rateTh+"%, sold > "+soldTh+")"; }
   }
   function exportCsv(){
@@ -529,6 +531,11 @@ if(_isXlsx){
     document.querySelectorAll(".tab").forEach(function(el){ if(el.dataset.tab!=="invisible"){ el.addEventListener("click", function(){ var p=q("tab-invisible"); if(p) p.style.display="none"; }); } });
     var ap=q("ivApply"); if(ap) ap.addEventListener("click", render);
     var ex=q("ivExp"); if(ex) ex.addEventListener("click", exportCsv);
+      var selAll=q("ivSelAll"); if(selAll){ selAll.addEventListener("change",function(){ var on=selAll.checked; document.querySelectorAll("#ivBody .ivChk").forEach(function(c){ c.checked=on; }); }); }
+      function getSelectedSkus(){ var out=[]; document.querySelectorAll("#ivBody .ivChk").forEach(function(c){ if(c.checked){ out.push(c.getAttribute("data-sku")); } }); return out; }
+      var setInv=q("ivSetInvisible"); if(setInv){ setInv.addEventListener("click",function(){ var sel=getSelectedSkus(); if(!sel.length){ alert("No SKU selected."); return; } if(typeof window.__ivSetInvisibleAction==="function"){ window.__ivSetInvisibleAction(sel); } else { alert("Selected "+sel.length+" SKU(s):\n"+sel.join(", ")+"\n\n(Action not yet configured.)"); } }); }
+      var fetchBtn=q("ivFetchStatus"); if(fetchBtn){ fetchBtn.addEventListener("click",function(){ var sel=getSelectedSkus(); var skus = sel.length ? sel : (window.__IV_CURRENT||[]).map(function(o){return o.sku_id;}); if(!skus.length){ alert("No SKU to query."); return; } if(typeof window.__ivFetchStatus==="function"){ window.__ivFetchStatus(skus); } else { alert("Status fetch helper not yet wired. Selected "+skus.length+" SKU(s)."); } }); }
+      window.__ivSetStatus=function(map){ document.querySelectorAll("#ivBody .ivStatus").forEach(function(td){ var sku=td.getAttribute("data-sku"); if(map && map.hasOwnProperty(sku)){ var v=map[sku]; if(v===true||v==="Y"||v==="on"){ td.textContent="ON"; td.style.color="var(--acc)"; } else if(v===false||v==="N"||v==="off"){ td.textContent="OFF"; td.style.color="var(--red)"; } else { td.textContent=String(v); td.style.color="var(--mut)"; } } }); };
     ["ivRate","ivSold"].forEach(function(id){ var el=q(id); if(el) el.addEventListener("keydown", function(e){ if(e.key==="Enter") render(); }); });
     document.querySelectorAll("#ivTable th[data-sort]").forEach(function(th){ th.addEventListener("click", function(){ var k=th.getAttribute("data-sort"); if(sortKey===k) sortDir=-sortDir; else { sortKey=k; sortDir=(k==="rate"||k==="sold"||k==="cancel")?-1:1; } render(); }); });
   }
