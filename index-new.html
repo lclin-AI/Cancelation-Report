@@ -158,6 +158,31 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
         <div class="scroll" style="margin-top:8px"><table class="thin" id="detailTable"></table></div>
       </div>
     </div>
+<div id="tab-invisible" style="display:none">
+      <div class="card">
+        <h2>Invisible List（按 SKU × 街市）</h2>
+        <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px">
+          <div><label>取消率 &gt; (%)</label><input type="text" id="ivRate" value="1" style="width:80px"></div>
+          <div><label>出售量 &gt; </label><input type="text" id="ivSold" value="50" style="width:80px"></div>
+          <button class="btn sec" id="ivApply" style="width:auto;padding:6px 14px">套用</button>
+          <button class="btn ghost" id="ivExp" style="width:auto;padding:6px 14px">匯出 Invisible List CSV</button>
+        </div>
+        <div id="ivInfo" style="font-size:12px;color:var(--mut);margin-bottom:6px"></div>
+        <div style="overflow:auto;max-height:70vh">
+          <table class="thin" id="ivTable" style="width:100%;border-collapse:collapse">
+            <thead><tr>
+              <th data-sort="wet_market" style="cursor:pointer;text-align:left">街市 Wet Market</th>
+              <th data-sort="sku_id" style="cursor:pointer;text-align:left">SKU ID</th>
+              <th data-sort="sku_name" style="cursor:pointer;text-align:left">SKU 名稱</th>
+              <th data-sort="sold" style="cursor:pointer;text-align:right">出售量</th>
+              <th data-sort="cancel" style="cursor:pointer;text-align:right">取消/退款量</th>
+              <th data-sort="rate" style="cursor:pointer;text-align:right">取消率 %</th>
+            </tr></thead>
+            <tbody id="ivBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </main>
 </div>
 <script>
@@ -360,33 +385,7 @@ window.runAnalyze=function(){_ra();window.__lastArr=Object.values({});};
 </script>
 
 
-    <div id="tab-invisible" style="display:none">
-      <div class="card">
-        <h2>Invisible List（按 SKU × 街市）</h2>
-        <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px">
-          <div><label>取消率 &gt; (%)</label><input type="text" id="ivRate" value="1" style="width:80px"></div>
-          <div><label>出售量 &gt; </label><input type="text" id="ivSold" value="50" style="width:80px"></div>
-          <button class="btn sec" id="ivApply" style="width:auto;padding:6px 14px">套用</button>
-          <button class="btn ghost" id="ivExp" style="width:auto;padding:6px 14px">匯出 Invisible List CSV</button>
-        </div>
-        <div id="ivInfo" style="font-size:12px;color:var(--mut);margin-bottom:6px"></div>
-        <div style="overflow:auto;max-height:70vh">
-          <table class="thin" id="ivTable" style="width:100%;border-collapse:collapse">
-            <thead><tr>
-              <th data-sort="wet_market" style="cursor:pointer;text-align:left">街市 Wet Market</th>
-              <th data-sort="sku_id" style="cursor:pointer;text-align:left">SKU ID</th>
-              <th data-sort="sku_name" style="cursor:pointer;text-align:left">SKU 名稱</th>
-              <th data-sort="sold" style="cursor:pointer;text-align:right">出售量</th>
-              <th data-sort="cancel" style="cursor:pointer;text-align:right">取消/退款量</th>
-              <th data-sort="rate" style="cursor:pointer;text-align:right">取消率 %</th>
-            </tr></thead>
-            <tbody id="ivBody"></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-<script>
+    <script>
 /* Drive folder auto-load (latest file) — added feature */
 (function(){
   var DRIVE_FOLDER_ID = "1cOroZVLlRu7Um9eOECKRMTzrvH9xsjAF";
