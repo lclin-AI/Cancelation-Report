@@ -94,6 +94,8 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
 
     <h3>平台</h3>
     <select id="fPlatform"><option value="">全部</option><option>Express</option><option>HKTVmall</option></select>
+    <h3>街市 3P</h3>
+    <label style="display:flex;align-items:center;gap:6px;font-weight:normal"><input type="checkbox" id="f3ponly" checked> 街市 3P only（隱藏自營店）</label>
     <h3>車隊</h3>
     <select id="fTeam"></select>
 
@@ -204,7 +206,10 @@ $("loadBtn").onclick=async()=>{
 };
 
 function toNum(v){const n=parseFloat(String(v).replace(/[^0-9.\-]/g,""));return isNaN(n)?0:n;}
-function ingest(recs){
+window.EXCLUDE_1P = ("叮叮菓菜|肉肉鮮生|SoFresh Select|九龍城 新興文記牛肉|九龍城 李輝記牛肉|紅豆烘焙|嘉頓麵包|3小時雪糕|有機農莊|街市即日餸|八叔凍肉|3小時超市").split('|');
+window.is1P = function(name){ try{ return window.EXCLUDE_1P.indexOf(String(name||'').trim())>=0; }catch(e){ return false; } };
+window.only3P = function(){ try{ var c=document.getElementById('f3ponly'); return c? !!c.checked : true; }catch(e){ return true; } };
+    function ingest(recs){
   ROWS=[];
   for(const rec of recs){
     if(!rec) continue;
@@ -216,7 +221,7 @@ function ingest(recs){
     let team="HKTVmall車隊";
     if(carRaw.includes("-")){ const after=carRaw.split("-")[1].trim(); if(after.slice(0,2).toUpperCase()===L.express_carline_prefix) team="Express車隊"; }
     ROWS.push({
-      order, platform, team, carline:carRaw,
+      order, platform, team, carline:carRaw, merchant:String(g("merchant")||"").trim(),
       sku_id:String(g("sku_id")), sku_name:String(g("sku_name")),
       type:String(g("type"))||"(未分類)",
       cancel_type:String(g("cancel_type")).trim(),
@@ -247,7 +252,7 @@ function selectedReasons(){ return [...document.querySelectorAll("#selfBox input
 function filtered(){
   const plat=$("fPlatform").value, team=$("fTeam").value, from=$("fFrom").value, to=$("fTo").value;
   const rs=selectedReasons();
-  return ROWS.filter(r=>{
+  return ROWS.filter(r=>{ if(window.only3P() && window.is1P(r.merchant)) return false;
     if(plat&&r.platform!==plat) return false;
     if(team&&r.team!==team) return false;
     if(from&&r.date&&r.date<from) return false;
@@ -483,7 +488,7 @@ if(_isXlsx){
     if(!CSV_ROWS) return [];
     var m={};
     for(var i=0;i<CSV_ROWS.length;i++){
-      var row=CSV_ROWS[i]; var sku=row["sku_id"], wm=row["Wet Market"];
+      var row=CSV_ROWS[i]; var sku=row["sku_id"], wm=row["Wet Market"]; if(window.only3P && window.only3P() && window.is1P && window.is1P(wm)) continue;
       if(!sku||!wm) continue;
       var k=sku+"||"+wm;
       if(!m[k]) m[k]={sku_id:sku, sku_name:row["sku_name_chi"]||"", wet_market:wm, sold:0, cancel:0};
