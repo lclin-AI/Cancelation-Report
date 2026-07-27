@@ -505,7 +505,7 @@ if(_isXlsx){
     CURRENT=list;
     var body=q("ivBody"); if(!body) return; var html="";
     for(var i=0;i<list.length;i++){ var o=list[i];
-      html+="<tr><td>"+esc(o.wet_market)+"</td><td>"+esc(o.sku_id)+"</td><td>"+esc(o.sku_name)+"</td><td style=\"text-align:right\">"+o.sold+"</td><td style=\"text-align:right\">"+o.cancel+"</td><td style=\"text-align:right\">"+o.rate.toFixed(2)+"</td></tr>";
+      html+="<tr><td>"+esc(o.wet_market)+"</td><td>"+esc(o.sku_id)+"</td><td>"+esc(o.sku_name)+"</td><td style=\"text-align:right\">"+o.sold+"</td><td style=\"text-align:right\">"+o.cancel+"</td><td style=\"text-align:right;"+(o.rate>=5?"color:var(--red);font-weight:600":(o.rate>=2?"color:var(--acc);font-weight:600":""))+"\">"+o.rate.toFixed(2)+"</td></tr>";
     }
     body.innerHTML=html||("<tr><td colspan=\"6\" style=\"color:var(--mut);padding:10px\">no items (rate > "+rateTh+"% and sold > "+soldTh+")</td></tr>");
     var info=q("ivInfo"); if(info){ info.textContent="Matched: "+list.length+" items (rate > "+rateTh+"%, sold > "+soldTh+")"; }
