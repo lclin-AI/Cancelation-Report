@@ -77,7 +77,8 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
     <select id="srcMode">
       <option value="default">讀取預設 Google Sheet</option>
       <option value="url">貼 Google Sheet 連結</option>
-      <option value="csv">上載 CSV</option>
+      <option value="drive">Drive 資料夾（自動取最新）</option>
+    <option value="csv">上載 CSV</option>
     </select>
     <input type="text" id="sheetUrl" placeholder="貼 Google Sheet 連結" style="display:none">
     <input type="file" id="csvFile" accept=".csv" style="display:none">
@@ -347,5 +348,55 @@ const _ra=runAnalyze;
 window.runAnalyze=function(){_ra();window.__lastArr=Object.values({});};
 
 </script>
+
+<script>
+/* Drive folder auto-load (latest file) — added feature */
+(function(){
+  var DRIVE_FOLDER_ID = "1cOroZVLlRu7Um9eOECKRMTzrvH9xsjAF";
+  var DRIVE_API_KEY = "AIzaSyD1jQcj2R5Rid5Pde1tFEFkfnHjI251YpM";
+  function q(id){ return document.getElementById(id); }
+  async function loadFromDriveFolder(){
+    var status = q('driveStatus');
+    function say(m){ if(status) status.textContent = m; }
+    try{
+      say('讀取 Drive 資料夾中…');
+      var listUrl = 'https://www.googleapis.com/drive/v3/files?q=' +
+        encodeURIComponent("'"+DRIVE_FOLDER_ID+"' in parents and trashed=false") +
+        '&orderBy=modifiedTime desc&pageSize=20' +
+        '&fields=' + encodeURIComponent('files(id,name,modifiedTime,mimeType)') +
+        '&key=' + DRIVE_API_KEY;
+      var lr = await fetch(listUrl);
+      if(!lr.ok) throw new Error('list HTTP '+lr.status);
+      var lj = await lr.json();
+      var files = (lj.files||[]).filter(function(f){ return /\.csv$/i.test(f.name) || f.mimeType==='text/csv'; });
+      if(!files.length){ say('資料夾中找不到 CSV 檔'); return; }
+      var latest = files[0];
+      say('載入最新檔案：'+latest.name+' …');
+      var dlUrl = 'https://www.googleapis.com/drive/v3/files/'+latest.id+'?alt=media&key='+DRIVE_API_KEY;
+      var dr = await fetch(dlUrl);
+      if(!dr.ok) throw new Error('download HTTP '+dr.status);
+      var text = await dr.text();
+      Papa.parse(text, { header:true, skipEmptyLines:true,
+        complete: function(res){
+          try{ ingest(res.data); if(typeof runAnalyze==='function') runAnalyze();
+            say('已載入：'+latest.name+'（'+res.data.length+' 列，最後修改 '+(latest.modifiedTime||'')+'）');
+          }catch(e){ say('解析/分析錯誤：'+e.message); }
+        },
+        error: function(err){ say('CSV 解析失敗：'+err.message); }
+      });
+    }catch(e){ say('Drive 載入失敗：'+e.message); }
+  }
+  window.loadFromDriveFolder = loadFromDriveFolder;
+  function wire(){
+    var sel=q('srcMode'), loadBtn=q('loadBtn');
+    if(!loadBtn){ setTimeout(wire,300); return; }
+    if(!q('driveStatus')){ var s=document.createElement('div'); s.id='driveStatus'; s.style.cssText='font-size:11px;color:var(--mut);margin-top:6px'; loadBtn.parentNode.insertBefore(s, loadBtn.nextSibling); }
+    var orig=loadBtn.onclick;
+    loadBtn.onclick=function(ev){ if(sel&&sel.value==='drive'){ if(ev)ev.preventDefault(); loadFromDriveFolder(); return false; } if(typeof orig==='function') return orig.call(this,ev); };
+  }
+  if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', wire);} else { wire(); }
+})();
+</script>
+
 </body>
 </html>
