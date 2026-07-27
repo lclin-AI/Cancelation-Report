@@ -107,6 +107,7 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
     <div class="tabs">
       <div class="tab on" data-tab="main">主要分析</div>
       <div class="tab" data-tab="detail">Order 明細</div>
+      <div class="tab" data-tab="invisible">Invisible List</div>
     </div>
 
     <div id="tab-main">
@@ -349,6 +350,33 @@ window.runAnalyze=function(){_ra();window.__lastArr=Object.values({});};
 
 </script>
 
+
+    <div id="tab-invisible" style="display:none">
+      <div class="card">
+        <h2>Invisible List（按 SKU × 街市）</h2>
+        <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px">
+          <div><label>取消率 &gt; (%)</label><input type="text" id="ivRate" value="1" style="width:80px"></div>
+          <div><label>出售量 &gt; </label><input type="text" id="ivSold" value="50" style="width:80px"></div>
+          <button class="btn sec" id="ivApply" style="width:auto;padding:6px 14px">套用</button>
+          <button class="btn ghost" id="ivExp" style="width:auto;padding:6px 14px">匯出 Invisible List CSV</button>
+        </div>
+        <div id="ivInfo" style="font-size:12px;color:var(--mut);margin-bottom:6px"></div>
+        <div style="overflow:auto;max-height:70vh">
+          <table class="thin" id="ivTable" style="width:100%;border-collapse:collapse">
+            <thead><tr>
+              <th data-sort="wet_market" style="cursor:pointer;text-align:left">街市 Wet Market</th>
+              <th data-sort="sku_id" style="cursor:pointer;text-align:left">SKU ID</th>
+              <th data-sort="sku_name" style="cursor:pointer;text-align:left">SKU 名稱</th>
+              <th data-sort="sold" style="cursor:pointer;text-align:right">出售量</th>
+              <th data-sort="cancel" style="cursor:pointer;text-align:right">取消/退款量</th>
+              <th data-sort="rate" style="cursor:pointer;text-align:right">取消率 %</th>
+            </tr></thead>
+            <tbody id="ivBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
 <script>
 /* Drive folder auto-load (latest file) — added feature */
 (function(){
@@ -423,6 +451,82 @@ window.runAnalyze=function(){_ra();window.__lastArr=Object.values({});};
     }
     if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', startObs);} else { startObs(); }
   })();
+})();
+</script>
+
+
+<script>
+/* Invisible List: SKU x Wet Market, rate>threshold AND sold>threshold */
+(function(){
+  var CSV_ROWS=null, CURRENT=[], sortKey="rate", sortDir=-1;
+  function q(id){ return document.getElementById(id); }
+  function num(v){ var n=parseFloat(String(v==null?"":v).replace(/[^0-9.\-]/g,"")); return isNaN(n)?0:n; }
+  function esc(s){ return String(s==null?"":s).replace(/[&<>\"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];}); }
+  function setRows(rows){ CSV_ROWS=rows; render(); }
+  window.__setInvisibleRows=setRows;
+  function compute(){
+    if(!CSV_ROWS) return [];
+    var m={};
+    for(var i=0;i<CSV_ROWS.length;i++){
+      var row=CSV_ROWS[i]; var sku=row["sku_id"], wm=row["Wet Market"];
+      if(!sku||!wm) continue;
+      var k=sku+"||"+wm;
+      if(!m[k]) m[k]={sku_id:sku, sku_name:row["sku_name_chi"]||"", wet_market:wm, sold:0, cancel:0};
+      m[k].sold+=num(row["quantity"]); m[k].cancel+=num(row["refund_quantity"]);
+    }
+    var list=[]; for(var kk in m){ var o=m[kk]; o.rate=o.sold>0?(o.cancel/o.sold*100):0; list.push(o);} return list;
+  }
+  function render(){
+    var rateTh=num((q("ivRate")||{}).value)||0, soldTh=num((q("ivSold")||{}).value)||0;
+    var list=compute().filter(function(o){ return o.rate>rateTh && o.sold>soldTh; });
+    list.sort(function(a,b){ var av=a[sortKey], bv=b[sortKey]; if(typeof av==="string"){ return sortDir*String(av).localeCompare(String(bv)); } return sortDir*((av||0)-(bv||0)); });
+    CURRENT=list;
+    var body=q("ivBody"); if(!body) return; var html="";
+    for(var i=0;i<list.length;i++){ var o=list[i];
+      html+="<tr><td>"+esc(o.wet_market)+"</td><td>"+esc(o.sku_id)+"</td><td>"+esc(o.sku_name)+"</td><td style=\"text-align:right\">"+o.sold+"</td><td style=\"text-align:right\">"+o.cancel+"</td><td style=\"text-align:right\">"+o.rate.toFixed(2)+"</td></tr>";
+    }
+    body.innerHTML=html||("<tr><td colspan=\"6\" style=\"color:var(--mut);padding:10px\">no items (rate > "+rateTh+"% and sold > "+soldTh+")</td></tr>");
+    var info=q("ivInfo"); if(info){ info.textContent="Matched: "+list.length+" items (rate > "+rateTh+"%, sold > "+soldTh+")"; }
+  }
+  function exportCsv(){
+    var rows=[["Wet Market","SKU ID","SKU Name","Sold","Cancel","Rate %"]];
+    CURRENT.forEach(function(o){ rows.push([o.wet_market,o.sku_id,o.sku_name,o.sold,o.cancel,o.rate.toFixed(2)]); });
+    var csv=rows.map(function(r){ return r.map(function(v){ v=String(v==null?"":v); return /[\",\n]/.test(v)?("\""+v.replace(/\"/g,"\"\"")+"\""):v; }).join(","); }).join(String.fromCharCode(10));
+    var blob=new Blob([String.fromCharCode(0xFEFF)+csv],{type:"text/csv;charset=utf-8;"});
+    var a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="invisible_list.csv"; document.body.appendChild(a); a.click(); a.remove();
+  }
+  function switchToInvisible(){
+    document.querySelectorAll(".tab").forEach(function(el){ el.classList.toggle("on", el.dataset.tab==="invisible"); });
+    ["main","detail","invisible"].forEach(function(name){ var p=q("tab-"+name); if(p) p.style.display=(name==="invisible")?"block":"none"; });
+    render();
+  }
+  function wireTabs(){
+    var invTab=document.querySelector(".tab[data-tab=\"invisible\"]");
+    if(!invTab){ setTimeout(wireTabs,300); return; }
+    invTab.addEventListener("click", switchToInvisible);
+    document.querySelectorAll(".tab").forEach(function(el){ if(el.dataset.tab!=="invisible"){ el.addEventListener("click", function(){ var p=q("tab-invisible"); if(p) p.style.display="none"; }); } });
+    var ap=q("ivApply"); if(ap) ap.addEventListener("click", render);
+    var ex=q("ivExp"); if(ex) ex.addEventListener("click", exportCsv);
+    ["ivRate","ivSold"].forEach(function(id){ var el=q(id); if(el) el.addEventListener("keydown", function(e){ if(e.key==="Enter") render(); }); });
+    document.querySelectorAll("#ivTable th[data-sort]").forEach(function(th){ th.addEventListener("click", function(){ var k=th.getAttribute("data-sort"); if(sortKey===k) sortDir=-sortDir; else { sortKey=k; sortDir=(k==="rate"||k==="sold"||k==="cancel")?-1:1; } render(); }); });
+  }
+  function hookLoader(){
+    if(typeof window.loadFromDriveFolder!=="function"){ setTimeout(hookLoader,300); return; }
+    if(window.__ivHooked) return; window.__ivHooked=true;
+    var orig=window.loadFromDriveFolder;
+    window.loadFromDriveFolder=async function(){
+      var res=await orig.apply(this,arguments);
+      try{
+        var id="1cOroZVLlRu7Um9eOECKRMTzrvH9xsjAF", key="AIzaSyD1jQcj2R5Rid5Pde1tFEFkfnHjI251YpM";
+        var listUrl="https://www.googleapis.com/drive/v3/files?q="+encodeURIComponent("\x27"+id+"\x27 in parents and trashed=false")+"&orderBy=modifiedTime desc&pageSize=20&fields="+encodeURIComponent("files(id,name,mimeType)")+"&key="+key;
+        var lj=await (await fetch(listUrl)).json();
+        var files=(lj.files||[]).filter(function(f){ return /\.csv$/i.test(f.name)||f.mimeType==="text/csv"; });
+        if(files.length){ var txt=await (await fetch("https://www.googleapis.com/drive/v3/files/"+files[0].id+"?alt=media&key="+key)).text(); Papa.parse(txt,{header:true,skipEmptyLines:true,complete:function(p){ setRows(p.data); }}); }
+      }catch(e){}
+      return res;
+    };
+  }
+  if(document.readyState==="loading"){ document.addEventListener("DOMContentLoaded", function(){ wireTabs(); hookLoader(); }); } else { wireTabs(); hookLoader(); }
 })();
 </script>
 
