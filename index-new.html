@@ -56,6 +56,7 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
 .split .h{grid-column:span 3}
 .thin th,.thin td{padding:6px 6px}
 </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 <div class="login-wrap" id="login">
@@ -396,22 +397,36 @@ window.runAnalyze=function(){_ra();window.__lastArr=Object.values({});};
       var lr = await fetch(listUrl);
       if(!lr.ok) throw new Error('list HTTP '+lr.status);
       var lj = await lr.json();
-      var files = (lj.files||[]).filter(function(f){ return /\.csv$/i.test(f.name) || f.mimeType==='text/csv'; });
+      var files = (lj.files||[]).filter(function(f){var n=(f.name||'').toLowerCase();var mt=f.mimeType||'';return n.endsWith('.csv')||n.endsWith('.xlsx')||mt==='text/csv'||mt==='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';});
       if(!files.length){ say('資料夾中找不到 CSV 檔'); return; }
       var latest = files[0];
       say('載入最新檔案：'+latest.name+' …');
-      var dlUrl = 'https://www.googleapis.com/drive/v3/files/'+latest.id+'?alt=media&key='+DRIVE_API_KEY;
-      var dr = await fetch(dlUrl);
-      if(!dr.ok) throw new Error('download HTTP '+dr.status);
-      var text = await dr.text();
-      Papa.parse(text, { header:true, skipEmptyLines:true,
-        complete: function(res){
-          try{ ingest(res.data); if(typeof runAnalyze==='function') runAnalyze();
-            say('已載入：'+latest.name+'（'+res.data.length+' 列，最後修改 '+(latest.modifiedTime||'')+'）');
-          }catch(e){ say('解析/分析錯誤：'+e.message); }
-        },
-        error: function(err){ say('CSV 解析失敗：'+err.message); }
-      });
+      var _n=(latest.name||'').toLowerCase();
+var _isXlsx = _n.endsWith('.xlsx') || (latest.mimeType||'').indexOf('spreadsheetml')>=0;
+var dlUrl='https://www.googleapis.com/drive/v3/files/'+latest.id+'?alt=media&key='+DRIVE_API_KEY;
+var dr=await fetch(dlUrl);
+if(!dr.ok) throw new Error('download HTTP '+dr.status);
+function _finish(rows){
+  try{ rows.forEach(function(r){
+    if(r && (r['Wet Market']===undefined || r['Wet Market']==='' || r['Wet Market']==='null')){
+      r['Wet Market'] = r['merchant_name'] || r['carline_code'] || r['Wet Market'] || '';
+    }
+  }); }catch(_e){}
+  try{ ingest(rows); if(typeof runAnalyze==='function') runAnalyze();
+    say('已載入最新檔案：'+latest.name+'（'+rows.length+' 列，'+(latest.modifiedTime||'')+'）');
+  }catch(e){ say('處理失敗：'+e.message); }
+}
+if(_isXlsx){
+  if(typeof XLSX==='undefined'){ say('Excel 解析元件尚未載入，請稍候重試'); return; }
+  var ab=await dr.arrayBuffer();
+  var wb=XLSX.read(new Uint8Array(ab),{type:'array'});
+  var ws=wb.Sheets[wb.SheetNames[0]];
+  var rows=XLSX.utils.sheet_to_json(ws,{defval:'',raw:false});
+  _finish(rows);
+}else{
+  var text=await dr.text();
+  Papa.parse(text,{header:true,skipEmptyLines:true,complete:function(res){ _finish(res.data); },error:function(err){ say('CSV 解析失敗：'+err.message); }});
+}
     }catch(e){ say('Drive 載入失敗：'+e.message); }
   }
   window.loadFromDriveFolder = loadFromDriveFolder;
