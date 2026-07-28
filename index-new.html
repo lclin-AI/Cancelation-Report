@@ -544,7 +544,35 @@ if(_isXlsx){
       var setInv=q("ivSetInvisible"); if(setInv){ setInv.addEventListener("click",function(){ var sel=getSelectedSkus(); if(!sel.length){ alert("No SKU selected."); return; } if(typeof window.__ivSetInvisibleAction==="function"){ window.__ivSetInvisibleAction(sel); } else { alert("Selected "+sel.length+" SKU(s):\n"+sel.join(", ")+"\n\n(Action not yet configured.)"); } }); }
       var fetchBtn=q("ivFetchStatus"); if(fetchBtn){ fetchBtn.addEventListener("click",function(){ var skus=(window.__IV_CURRENT||[]).map(function(o){return o.sku_id;}); if(!skus.length){ alert("No SKU to query. Generate the Invisible List first."); return; } var info=q("ivInfo"); if(info){ info.textContent="Fetching Customer App status for "+skus.length+" SKU(s)..."; } document.querySelectorAll("#ivBody .ivStatus").forEach(function(td){ td.textContent="\u67e5\u8a62\u4e2d\u2026"; td.style.color="var(--muted)"; }); if(!window.SUPABASE_URL || !window.SUPABASE_ANON_KEY || window.SUPABASE_ANON_KEY.indexOf("__")===0){ if(info){info.textContent="Supabase key not configured. Set window.SUPABASE_ANON_KEY.";} return; } var uniq=Array.from(new Set(skus.filter(Boolean))); var CHUNK=200; var chunks=[]; for(var i=0;i<uniq.length;i+=CHUNK){ chunks.push(uniq.slice(i,i+CHUNK)); } var statusMap={}; Promise.all(chunks.map(function(ch){   var inList=ch.map(function(s){ return "\""+String(s).replace(/"/g,"")+"\""; }).join(",");   var url=window.SUPABASE_URL.replace(/\/$/,"")+"/rest/v1/sku_status?select=cms_sku,cms_online,cms_visible&cms_sku=in.("+encodeURIComponent(inList)+")";   return fetch(url,{headers:{apikey:window.SUPABASE_ANON_KEY,Authorization:"Bearer "+window.SUPABASE_ANON_KEY}}).then(function(r){ if(!r.ok){ throw new Error("HTTP "+r.status); } return r.json(); }).then(function(rows){ (rows||[]).forEach(function(row){ statusMap[row.cms_sku]=row.cms_visible; }); }); })).then(function(){   var painted={}; var hit=0;   skus.forEach(function(s){ if(statusMap.hasOwnProperty(s)){ painted[s]=statusMap[s]; hit++; } });   if(window.__ivSetStatus){ window.__ivSetStatus(painted); }   if(info){ info.textContent="Customer App status: "+hit+" / "+skus.length+" SKU(s) matched."; } }).catch(function(e){   if(info){ info.textContent="Status query failed: "+e.message; }   document.querySelectorAll("#ivBody .ivStatus").forEach(function(td){ td.textContent="\u2014"; td.style.color="var(--muted)"; }); });}); }
       window.__ivGetSkus=function(){ return (window.__IV_CURRENT||[]).map(function(o){return o.sku_id;}); };
-      window.__ivSetStatus=function(map){ document.querySelectorAll("#ivBody .ivStatus").forEach(function(td){ var sku=td.getAttribute("data-sku"); if(map && map.hasOwnProperty(sku)){ var v=map[sku]; if(v===true||v==="Y"||v==="on"){ td.textContent="ON"; td.style.color="var(--acc)"; } else if(v===false||v==="N"||v==="off"){ td.textContent="OFF"; td.style.color="var(--red)"; } else { td.textContent=String(v); td.style.color="var(--mut)"; } } }); };
+      window.__ivSetStatus=function(map){ document.querySelectorAll("#ivBody .ivStatus").forEach(function(td){ var sku=td.getAttribute("data-sku"); if(map && map.hasOwnProperty(sku)){ var v=map[sku]; if(v===true||v==="Y"||v==="on"){ td.textContent="ON"; td.style.color="var(--acc)"; } else if(v===false||v==="N"||v==="off"){ td.textContent="OFF"; td.style.color="var(--red)"; } else { td.textContent=String(v); td.style.color="var(--mut)"; } } }); 
+  try {
+    var __missing = [];
+    document.querySelectorAll('#ivBody .ivStatus').forEach(function(td){
+      var s = td.getAttribute('data-sku');
+      if (s && !(map && Object.prototype.hasOwnProperty.call(map, s))) { __missing.push(s); }
+    });
+    if (__missing.length && window.SUPABASE_URL && window.SUPABASE_ANON_KEY) {
+      var __seen = {}; var __rows = [];
+      __missing.forEach(function(s){ if(!__seen[s]){ __seen[s]=1; __rows.push({cms_sku:s}); } });
+      var __ep = window.SUPABASE_URL + '/rest/v1/' + 'scan_queue';
+      fetch(__ep, {
+        method: 'POST',
+        headers: {
+          'apikey': window.SUPABASE_ANON_KEY,
+          'Authorization': 'Bearer ' + window.SUPABASE_ANON_KEY,
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=ignore-duplicates,return=minimal'
+        },
+        body: JSON.stringify(__rows)
+      }).then(function(r){ if(window.console) console.log('[scan_queue] enqueued', __rows.length, 'status', r.status); })
+        .catch(function(e){ if(window.console) console.warn('[scan_queue] enqueue failed', e); });
+      document.querySelectorAll('#ivBody .ivStatus').forEach(function(td){
+        var s = td.getAttribute('data-sku');
+        if (s && __seen[s]) { td.textContent = '\u5f85\u6383\u63cf'; td.style.color = 'var(--muted)'; }
+      });
+    }
+  } catch(__e) { if(window.console) console.warn('[scan_queue] err', __e); }
+};
     ["ivRate","ivSold"].forEach(function(id){ var el=q(id); if(el) el.addEventListener("keydown", function(e){ if(e.key==="Enter") render(); }); });
     document.querySelectorAll("#ivTable th[data-sort]").forEach(function(th){ th.addEventListener("click", function(){ var k=th.getAttribute("data-sort"); if(sortKey===k) sortDir=-sortDir; else { sortKey=k; sortDir=(k==="rate"||k==="sold"||k==="cancel")?-1:1; } render(); }); });
   }
