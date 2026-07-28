@@ -257,7 +257,7 @@ function ingest(recs){
     let team="HKTVmall車隊";
     if(carRaw.includes("-")){ const after=carRaw.split("-")[1].trim(); if(after.slice(0,2).toUpperCase()===L.express_carline_prefix) team="Express車隊"; }
     ROWS.push({
-      order, platform, team, carline:carRaw, merchant:String(g("merchant")||rec["Store Name"]||"").trim(),
+      order, platform, team, carline:carRaw, merchant:String(g("merchant")||rec["Wet_Market"]||"").trim(),
       sku_id:String(g("sku_id")), sku_name:String(g("sku_name")),
       type:String(g("type"))||"(未分類)",
       cancel_type:String(g("cancel_type")).trim(),
@@ -500,7 +500,7 @@ if(_isXlsx){
     if(!CSV_ROWS) return [];
     var m={};
     for(var i=0;i<CSV_ROWS.length;i++){
-      var row=CSV_ROWS[i]; var sku=row["sku_id"], wm=row["Store Name"]; if(window.__EXCL_REASON&&window.__EXCL_REASON(row["sku_cancel_reason"],row["sku_cs_refund_reason"],row["REFUND_REPORT_CANCEL_reason"]))continue; var _store=(row["Wet Market"]||row["merchant_name"]||wm); if(window.only3P && window.only3P() && window.is1P && window.is1P(_store)) continue;
+      var row=CSV_ROWS[i]; var sku=row["sku_id"], wm=row["Store_Name"]; if(window.__EXCL_REASON&&window.__EXCL_REASON(row["sku_cancel_reason"],row["sku_cs_refund_reason"],row["REFUND_REPORT_CANCEL_reason"]))continue; var _store=(row["Wet_Market"]||row["merchant_name"]||wm); if(window.only3P && window.only3P() && window.is1P && window.is1P(_store)) continue;
       if(!sku||!wm) continue;
       var k=sku+"||"+wm;
       if(!m[k]) m[k]={sku_id:sku, sku_name:row["sku_name_chi"]||"", wet_market:wm, sold:0, cancel:0};
