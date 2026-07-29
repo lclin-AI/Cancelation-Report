@@ -205,7 +205,7 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
 const SETTINGS = {
   google_sheets: { spreadsheet_id: "1y4sZs2yvqZZ2foa27AvJOt19Pg4lvDHzfnZstAQ4zQU", gid: "0" },
   columns: { delivery_date:"delivery_date", order_no:"order_number", carline:"carline_code", merchant:"merchant_name", sku_id:"sku_id",
-             sku_name:"sku_name_chi", cancel_type:"sku_cancel_reason", type:"express_main_category_name_zh",
+             sku_name:"sku_name_chi", cancel_type:"sku_cancel_reason", type:"express_main_cat_name_zh", type2:"sub_cat1_name_zh",
              sold_qty:"quantity", refund_qty:"refund_quantity" },
   logic: { express_carline_prefix:"WM", express_order_prefix:"M" }
 };
@@ -265,6 +265,7 @@ function ingest(recs){
       order, platform, team, carline:carRaw, merchant:String(g("merchant")||rec["Wet_Market"]||"").trim(),
       sku_id:String(g("sku_id")), sku_name:String(g("sku_name")),
       type:String(g("type"))||"(未分類)",
+      type2:String(g("type2"))||"(未分類)",
       cancel_type:String(g("cancel_type")).trim(),
       cs_reason:String(rec["sku_cs_refund_reason"]==null?"":rec["sku_cs_refund_reason"]).trim(),
       rr_reason:String(rec["REFUND_REPORT_CANCEL_reason"]==null?"":rec["REFUND_REPORT_CANCEL_reason"]).trim(),
@@ -346,12 +347,12 @@ function renderFocus(arr){
 }
 $("applyTh").onclick=()=>{ if(window.__lastArr){ renderFocus(window.__lastArr); renderChart(window.__lastArr); }; };
 function renderCat(rs){
-  const byCat={};
-  VIEW.forEach(r=>{ const k=r.type||"(未分類)"; if(!byCat[k])byCat[k]={sold:0,cancel:0}; byCat[k].sold+=r.sold; byCat[k].cancel+=isCancelled(r,rs)?r.refund:0; });
-  const arr=Object.entries(byCat).map(([k,o])=>({cat:k,...o,rate:o.sold?o.cancel/o.sold*100:0})).sort((a,b)=>b.rate-a.rate);
-  let h="<thead><tr><th>貨品類別</th><th>出售量</th><th>取消/退款量</th><th>取消率 %</th></tr></thead><tbody>";
-  arr.forEach(o=>{h+="<tr><td>"+o.cat+"</td><td>"+fmtN(o.sold)+"</td><td>"+fmtN(o.cancel)+"</td><td class='"+rateCls(o.rate)+"'>"+fmtRate(o.rate)+"</td></tr>";});
-  $("catTable").innerHTML=h+"</tbody>"; window.__cat=arr;
+  const byCat = {};
+  VIEW.forEach(r=>{ const m = r.type||"(未分類)", s2 = r.type2||"(未分類)"; const k = m+" \u241F "+s2; if(!byCat[k])byCat[k]={main:m,sub:s2,sold:0,cancel:0}; byCat[k].sold+=r.sold; byCat[k].cancel+=isCancelled(r,rs)?r.refund:0; });
+  const arr = Object.values(byCat).map(o=>({cat:o.main+" / "+o.sub,main:o.main,sub:o.sub,sold:o.sold,cancel:o.cancel,rate:o.sold?o.cancel/o.sold*100:0})).sort((a,b)=>b.rate-a.rate);
+  let h = "<thead><tr><th>主類別</th><th>子類別</th><th>出售量</th><th>取消/退款量</th><th>取消率 %</th></tr></thead><tbody>";
+  arr.forEach(o=>{h+="<tr><td>"+o.main+"</td><td>"+o.sub+"</td><td>"+fmtN(o.sold)+"</td><td>"+fmtN(o.cancel)+"</td><td class='"+rateCls(o.rate)+"'>"+fmtRate(o.rate)+"</td></tr>";});
+  $("catTable").innerHTML = h+"</tbody>"; window.__cat = arr;
 }
 function renderTeam(rs){
   const byCat={};
@@ -389,7 +390,7 @@ $("loadDetail").onclick=()=>{
 // ---- CSV export helpers ----
 function dl(name,rows){const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(",")).join("\n");const b=new Blob([csv],{type:"text/csv"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=name;a.click();}
 $("expFocus").onclick=()=>dl("focus.csv",[["SKU ID","SKU 名稱","出售量","取消量","取消率%"],...(window.__focus||[]).map(o=>[o.sku_id,o.name,o.sold,o.cancel,o.rate.toFixed(2)])]);
-$("expCat").onclick=()=>dl("category.csv",[["類別","出售量","取消量","取消率%"],...(window.__cat||[]).map(o=>[o.cat,o.sold,o.cancel,o.rate.toFixed(2)])]);
+$("expCat").onclick=()=>dl("category.csv",[["主類別","子類別","出售量","取消量","取消率%"],...(window.__cat||[]).map(o=>[o.main,o.sub,o.sold,o.cancel,o.rate.toFixed(2)])]);
 $("expTeam").onclick=()=>dl("team.csv",[["類別","E出售","E取消","E率%","H出售","H取消","H率%"],...(window.__team||[]).map(o=>[o.cat,o.eSold,o.eC,o.eR.toFixed(2),o.hSold,o.hC,o.hR.toFixed(2)])]);
 $("expDetail").onclick=()=>dl("detail.csv",[["訂單編號","SKU 名稱","SKU ID","退款件數","原因","平台","車隊","車隊代碼","送貨日期"],...(window.__detail||[]).map(r=>[r.order,r.sku_name,r.sku_id,r.refund,r.cancel_type,r.platform,r.team,r.carline,r.date])]);
 
