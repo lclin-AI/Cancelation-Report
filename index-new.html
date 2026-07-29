@@ -596,5 +596,6 @@ if(_isXlsx){
 })();
 </script>
 
+<script>(function(){var lastSig="";function sig(){var out=[];document.querySelectorAll("#ivBody .ivStatus").forEach(function(td){out.push(td.getAttribute("data-sku"));});return out.join("|");}setInterval(function(){var btn=document.getElementById("ivFetchStatus");if(!btn)return;var s=sig();if(!s||s===lastSig)return;lastSig=s;btn.click();},800);})();</script>
 </body>
 </html>
