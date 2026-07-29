@@ -177,7 +177,7 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
           <div><label>取消率 &gt; (%)</label><input type="text" id="ivRate" value="1" style="width:80px"></div>
           <div><label>出售量 &gt; </label><input type="text" id="ivSold" value="50" style="width:80px"></div>
           <button class="btn sec" id="ivApply" style="width:auto;padding:6px 14px">套用</button>
-          <button class="btn ghost" id="ivExp" style="width:auto;padding:6px 14px">匯出 Invisible List CSV</button><button class="btn sec" id="ivFetchStatus" style="width:auto;padding:6px 14px">查詢狀態</button><button class="btn" id="ivSetInvisible" style="width:auto;padding:6px 14px">設為Invisible (已選)</button>
+          <button class="btn ghost" id="ivExp" style="width:auto;padding:6px 14px">匯出 Invisible List CSV</button><button class="btn sec" id="ivFetchStatus" style="width:auto;padding:6px 14px">查詢狀態</button><button class="btn" id="ivSetInvisible" style="width:auto;padding:6px 14px">設為Invisible (已選)</button><button class="btn ghost" id="ivCancelSched" style="width:auto;padding:6px 14px">取消排程 (已選)</button>
         </div>
         <div id="ivInfo" style="font-size:12px;color:var(--mut);margin-bottom:6px"></div>
         <div id="ivSelInfo" style="font-size:12px;color:var(--acc);margin-bottom:6px">已選 0 個 SKU</div>
@@ -555,10 +555,12 @@ if(_isXlsx){
       function updateSelCount(){ var n=getSelectedSkus().length, tot=document.querySelectorAll("#ivBody .ivChk").length;
         var el=q("ivSelInfo"); if(el){ el.textContent="已選 "+n+" 個 SKU（共 "+tot+" 個）"; el.style.color=n?"var(--acc)":"var(--mut)"; }
         var bs=q("ivSetInvisible"); if(bs){ bs.textContent=n?("設為Invisible (已選 "+n+")"):"設為Invisible (已選)"; }
+        var bc=q("ivCancelSched"); if(bc){ bc.textContent=n?("取消排程 (已選 "+n+")"):"取消排程 (已選)"; }
         var sa=q("ivSelAll"); if(sa){ sa.checked=(tot>0&&n===tot); sa.indeterminate=(n>0&&n<tot); }
       }
       window.__ivUpdateSelCount=updateSelCount;
       var ivbody=q("ivBody"); if(ivbody){ ivbody.addEventListener("change",function(e){ if(e.target&&e.target.classList&&e.target.classList.contains("ivChk")) updateSelCount(); }); }
+      var canSch=q("ivCancelSched"); if(canSch){ canSch.addEventListener("click",function(){ var sel=getSelectedSkus(); if(!sel.length){ alert("未選擇 SKU。"); return; } if(typeof window.__ivCancelSchedAction==="function"){ window.__ivCancelSchedAction(sel); } else { alert("Invisible 功能未啟用。"); } }); }
       var setInv=q("ivSetInvisible"); if(setInv){ setInv.addEventListener("click",function(){ var sel=getSelectedSkus(); if(!sel.length){ alert("No SKU selected."); return; } if(typeof window.__ivSetInvisibleAction==="function"){ window.__ivSetInvisibleAction(sel); } else { alert("Selected "+sel.length+" SKU(s):\n"+sel.join(", ")+"\n\n(Action not yet configured.)"); } }); }
       var fetchBtn=q("ivFetchStatus"); if(fetchBtn){ fetchBtn.addEventListener("click",function(){ var skus=(window.__IV_CURRENT||[]).map(function(o){return o.sku_id;}); if(!skus.length){ alert("No SKU to query. Generate the Invisible List first."); return; } var info=q("ivInfo"); if(info){ info.textContent="Fetching Customer App status for "+skus.length+" SKU(s)..."; } document.querySelectorAll("#ivBody .ivStatus").forEach(function(td){ td.textContent="\u67e5\u8a62\u4e2d\u2026"; td.style.color="var(--muted)"; }); if(!window.SUPABASE_URL || !window.SUPABASE_ANON_KEY || window.SUPABASE_ANON_KEY.indexOf("__")===0){ if(info){info.textContent="Supabase key not configured. Set window.SUPABASE_ANON_KEY.";} return; } var uniq=Array.from(new Set(skus.filter(Boolean))); var CHUNK=200; var chunks=[]; for(var i=0;i<uniq.length;i+=CHUNK){ chunks.push(uniq.slice(i,i+CHUNK)); } var statusMap={}; Promise.all(chunks.map(function(ch){   var inList=ch.map(function(s){ return "\""+String(s).replace(/"/g,"")+"\""; }).join(",");   var url=window.SUPABASE_URL.replace(/\/$/,"")+"/rest/v1/cms_3p_sku?select=cms_sku,cms_online,cms_visible&cms_sku=in.("+encodeURIComponent(inList)+")";   return fetch(url,{headers:{apikey:window.SUPABASE_ANON_KEY,Authorization:"Bearer "+window.SUPABASE_ANON_KEY}}).then(function(r){ if(!r.ok){ throw new Error("HTTP "+r.status); } return r.json(); }).then(function(rows){ (rows||[]).forEach(function(row){ statusMap[row.cms_sku]=row.cms_visible; }); }); })).then(function(){   var painted={}; var hit=0;   skus.forEach(function(s){ if(statusMap.hasOwnProperty(s)){ painted[s]=statusMap[s]; hit++; } });   if(window.__ivSetStatus){ window.__ivSetStatus(painted); }   if(info){ info.textContent="Customer App status: "+hit+" / "+skus.length+" SKU(s) matched."; } }).catch(function(e){   if(info){ info.textContent="Status query failed: "+e.message; }   document.querySelectorAll("#ivBody .ivStatus").forEach(function(td){ td.textContent="\u2014"; td.style.color="var(--muted)"; }); });}); }
       window.__ivGetSkus=function(){ return (window.__IV_CURRENT||[]).map(function(o){return o.sku_id;}); };
@@ -637,7 +639,7 @@ if(_isXlsx){
   var COLOR = { pending:"var(--acc)", invisible:"var(--red)", reverted:"var(--grn)", failed:"var(--red)", cancelled:"var(--mut)" };
   var EVENT = { requested:"已排隊", invisible_applied:"CMS 已設 Invisible", revert_applied:"CMS 已復原 Visible", revert_requested:"要求即時復原", schedule_updated:"更新排程", schedule_cancelled:"取消排程", cancelled:"取消", failed:"失敗" };
 
-  var BUSY = {}, BUSYSKU = {};
+  var BUSY = {}, BUSYSKU = {}, TSEL = {};
   function setBusy(id, label){ if(label){ BUSY[id] = label; } else { delete BUSY[id]; } renderTasks(); }
   function setBusySku(sku, label){ if(label){ BUSYSKU[sku] = label; } else { delete BUSYSKU[sku]; } renderRowHints(); }
   function rest(path, opts){ return fetch(base()+"/rest/v1/"+path, Object.assign({ headers: hdr() }, opts || {})); }
@@ -685,6 +687,20 @@ if(_isXlsx){
       .then(function(){ if(btn){ btn.disabled = false; btn.textContent = "Invisible"; } })
       .catch(function(e){ delete BUSYSKU[sku]; renderRowHints(); alert("排隊失敗: " + e.message); if(btn){ btn.disabled = false; btn.textContent = "Invisible"; } });
   }
+  window.__ivCancelSchedAction = function(skus){
+    if(!skus || !skus.length) return;
+    var list = [];
+    for(var i0=0;i0<skus.length;i0++){ var tk = taskFor(skus[i0]); if(tk && (tk.status === "pending" || tk.status === "invisible") && tk.scheduled_visible_at){ list.push({ sku: skus[i0], id: tk.id }); } }
+    if(!list.length){ alert("已選的 SKU 沒有進行中的自動復原排程。"); return; }
+    if(!confirm("取消 " + list.length + " 個 SKU 的自動復原排程？\nSKU 會維持 Invisible，直至你按「即時復原」或重新設定排程。")) return;
+    var k = 0;
+    (function next(){
+      if(k >= list.length){ loadTasks().then(function(){ loadLogs(); for(var z=0;z<list.length;z++){ delete BUSYSKU[list[z].sku]; } renderRowHints(); }); return; }
+      var it = list[k++];
+      BUSYSKU[it.sku] = "取消排程中…"; renderRowHints();
+      rpc("cancel_sku_invisible_schedule", { p_id: it.id }).then(next, next);
+    })();
+  };
   window.__ivSetInvisibleAction = function(skus){
     if(!skus || !skus.length) return;
     var d = daysWanted();
@@ -744,10 +760,13 @@ if(_isXlsx){
   }
   function renderTasks(){
     var body = q("ivtBody"); if(!body) return;
+    var okIds = {}; for(var z0=0;z0<TASKS.length;z0++){ var tz = TASKS[z0]; if((tz.status === "pending" || tz.status === "invisible") && tz.scheduled_visible_at) okIds[tz.id] = 1; }
+    for(var kk in TSEL){ if(!okIds[kk]) delete TSEL[kk]; }
     var h = "";
     for(var i=0;i<TASKS.length;i++){
       var t = TASKS[i], live = (t.status === "pending" || t.status === "invisible");
       h += '<tr>'
+        + '<td style="text-align:center">' + ((live && t.scheduled_visible_at) ? ('<input type="checkbox" class="ivtChk" data-id="' + t.id + '"' + (TSEL[t.id] ? ' checked' : '') + '>') : '') + '</td>'
         + '<td style="text-align:left">' + esc(t.cms_sku) + '</td>'
         + '<td style="text-align:left">' + esc(t.sku_name || "") + '</td>'
         + '<td style="text-align:left">' + esc(t.wet_market || "") + '</td>'
@@ -758,7 +777,7 @@ if(_isXlsx){
         + '<td style="text-align:left;color:var(--mut)">' + esc(t.last_error || "") + '</td>'
         + '</tr>';
     }
-    body.innerHTML = h || '<tr><td colspan="8" class="muted" style="padding:10px">未有任務</td></tr>';
+    body.innerHTML = h || '<tr><td colspan="9" class="muted" style="padding:10px">未有任務</td></tr>';
     var info = q("ivtInfo"); if(info) info.textContent = TASKS.length + " 個任務 · Supabase 每 5 分鐘自動檢查排程";
     var saves = body.querySelectorAll(".ivtSave");
     for(var a=0;a<saves.length;a++){
@@ -798,7 +817,35 @@ if(_isXlsx){
           .catch(function(e){ setBusy(Number(id), null); alert("失敗: " + e.message); });
       };
     }
+    var chks = body.querySelectorAll(".ivtChk");
+    for(var ck=0;ck<chks.length;ck++){
+      chks[ck].onchange = function(){ var cid = this.getAttribute("data-id"); if(this.checked){ TSEL[cid] = 1; } else { delete TSEL[cid]; } updateTaskSel(); };
+    }
+    var selAll = q("ivtSelAll");
+    if(selAll){ selAll.onclick = function(){ var on = this.checked, cs = body.querySelectorAll(".ivtChk");
+      for(var s=0;s<cs.length;s++){ cs[s].checked = on; var i2 = cs[s].getAttribute("data-id"); if(on){ TSEL[i2] = 1; } else { delete TSEL[i2]; } } updateTaskSel(); }; }
+    updateTaskSel();
     renderRowHints();
+  }
+  function selectedTaskIds(){ var out = []; for(var k in TSEL){ out.push(Number(k)); } return out; }
+  function updateTaskSel(){
+    var n = selectedTaskIds().length, tot = document.querySelectorAll("#ivtBody .ivtChk").length;
+    var el = q("ivtSelInfo"); if(el){ el.textContent = "已選 " + n + " 個任務（可取消排程：" + tot + " 個）"; el.style.color = n ? "var(--acc)" : "var(--mut)"; }
+    var b = q("ivtCancelSched"); if(b){ b.textContent = n ? ("批次取消排程 (已選 " + n + ")") : "批次取消排程 (已選)"; b.disabled = !n; b.onclick = batchCancelSched; }
+    var sa = q("ivtSelAll"); if(sa){ sa.checked = (tot > 0 && n === tot); sa.indeterminate = (n > 0 && n < tot); }
+  }
+  function batchCancelSched(){
+    var ids = selectedTaskIds();
+    if(!ids.length){ alert("未選擇任務。"); return; }
+    if(!confirm("取消 " + ids.length + " 個任務的自動復原排程？\nSKU 會維持 Invisible，直至你按「即時復原」或重新設定排程。")) return;
+    for(var z1=0;z1<ids.length;z1++){ BUSY[ids[z1]] = "取消排程中…"; }
+    renderTasks();
+    var i1 = 0;
+    (function next(){
+      if(i1 >= ids.length){ for(var z2=0;z2<ids.length;z2++){ delete BUSY[ids[z2]]; delete TSEL[ids[z2]]; }
+        loadTasks().then(function(){ loadLogs(); }); return; }
+      rpc("cancel_sku_invisible_schedule", { p_id: ids[i1++] }).then(next, next);
+    })();
   }
   function renderLogs(){
     var body = q("ivlBody"); if(!body) return;
@@ -831,8 +878,9 @@ if(_isXlsx){
       + '<button class="btn sec" id="ivtRefresh" style="width:auto;padding:6px 14px">重新載入</button>'
       + '<button class="btn ghost" id="ivtRun" style="width:auto;padding:6px 14px">立即執行排程</button>'
       + '<span class="muted" id="ivtInfo"></span></div>'
+      + '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><button class="btn ghost" id="ivtCancelSched" style="width:auto;padding:6px 14px">批次取消排程 (已選)</button><span id="ivtSelInfo" style="font-size:12px;color:var(--mut)">已選 0 個任務</span></div>'
       + '<div style="overflow:auto;max-height:70vh"><table class="thin" style="width:100%;border-collapse:collapse"><thead><tr>'
-      + '<th style="text-align:left">SKU</th><th style="text-align:left">名稱</th><th style="text-align:left">街市</th>'
+      + '<th style="text-align:center;width:26px"><input type="checkbox" id="ivtSelAll"></th><th style="text-align:left">SKU</th><th style="text-align:left">名稱</th><th style="text-align:left">街市</th>'
       + '<th style="text-align:center">狀態</th><th style="text-align:left">Invisible 時間</th>'
       + '<th style="text-align:left">排程復原 Visible</th><th style="text-align:center">動作</th><th style="text-align:left">備註</th>'
       + '</tr></thead><tbody id="ivtBody"></tbody></table></div></div>';
