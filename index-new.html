@@ -355,17 +355,17 @@ function renderCat(rs){
   $("catTable").innerHTML = h+"</tbody>"; window.__cat = arr;
 }
 function renderTeam(rs){
-  const byCat={};
+  const byCat = {};
   VIEW.forEach(r=>{
-    const k=r.type||"(未分類)"; const t=r.team.indexOf("Express")>=0?"e":"h";
-    if(!byCat[k])byCat[k]={eSold:0,eC:0,hSold:0,hC:0};
-    const c=isCancelled(r,rs)?r.refund:0;
-    if(t==="e"){byCat[k].eSold+=r.sold;byCat[k].eC+=c;}else{byCat[k].hSold+=r.sold;byCat[k].hC+=c;}
+    const m = r.type||"(未分類)", s2 = r.type2||"(未分類)"; const k = m+" \u241F "+s2; const tm = r.team.indexOf("Express")>=0?"e":"h";
+    if(!byCat[k])byCat[k]={main:m,sub:s2,eSold:0,eC:0,hSold:0,hC:0};
+    const c = isCancelled(r,rs)?r.refund:0;
+    if(tm==="e"){byCat[k].eSold+=r.sold;byCat[k].eC+=c;}else{byCat[k].hSold+=r.sold;byCat[k].hC+=c;}
   });
-  const arr=Object.entries(byCat).map(([k,o])=>({cat:k,...o,eR:o.eSold?o.eC/o.eSold*100:0,hR:o.hSold?o.hC/o.hSold*100:0}));
+  const arr = Object.values(byCat).map(o=>({cat:o.main+" / "+o.sub,...o,eR:o.eSold?o.eC/o.eSold*100:0,hR:o.hSold?o.hC/o.hSold*100:0}));
   arr.sort((a,b)=>Math.max(b.eR,b.hR)-Math.max(a.eR,a.hR));
-  let h="<thead><tr><th rowspan=2>貨品類別</th><th colspan=3 style='text-align:center'>Express 車隊</th><th colspan=3 style='text-align:center'>HKTVmall 車隊</th></tr><tr><th>出售</th><th>取消</th><th>率%</th><th>出售</th><th>取消</th><th>率%</th></tr></thead><tbody>";
-  arr.forEach(o=>{h+="<tr><td>"+o.cat+"</td><td>"+fmtN(o.eSold)+"</td><td>"+fmtN(o.eC)+"</td><td class='"+rateCls(o.eR)+"'>"+fmtRate(o.eR)+"</td><td>"+fmtN(o.hSold)+"</td><td>"+fmtN(o.hC)+"</td><td class='"+rateCls(o.hR)+"'>"+fmtRate(o.hR)+"</td></tr>";});
+  let h = "<thead><tr><th rowspan=2>主類別</th><th rowspan=2>子類別</th><th colspan=3 style='text-align:center'>Express 車隊</th><th colspan=3 style='text-align:center'>HKTVmall 車隊</th></tr><tr><th>出售</th><th>取消</th><th>率%</th><th>出售</th><th>取消</th><th>率%</th></tr></thead><tbody>";
+  arr.forEach(o=>{h+="<tr><td>"+o.main+"</td><td>"+o.sub+"</td><td>"+fmtN(o.eSold)+"</td><td>"+fmtN(o.eC)+"</td><td class='"+rateCls(o.eR)+"'>"+fmtRate(o.eR)+"</td><td>"+fmtN(o.hSold)+"</td><td>"+fmtN(o.hC)+"</td><td class='"+rateCls(o.hR)+"'>"+fmtRate(o.hR)+"</td></tr>";});
   $("teamTable").innerHTML=h+"</tbody>"; window.__team=arr;
 }
 // keep last arr for threshold re-apply
@@ -391,7 +391,7 @@ $("loadDetail").onclick=()=>{
 function dl(name,rows){const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(",")).join("\n");const b=new Blob([csv],{type:"text/csv"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=name;a.click();}
 $("expFocus").onclick=()=>dl("focus.csv",[["SKU ID","SKU 名稱","出售量","取消量","取消率%"],...(window.__focus||[]).map(o=>[o.sku_id,o.name,o.sold,o.cancel,o.rate.toFixed(2)])]);
 $("expCat").onclick=()=>dl("category.csv",[["主類別","子類別","出售量","取消量","取消率%"],...(window.__cat||[]).map(o=>[o.main,o.sub,o.sold,o.cancel,o.rate.toFixed(2)])]);
-$("expTeam").onclick=()=>dl("team.csv",[["類別","E出售","E取消","E率%","H出售","H取消","H率%"],...(window.__team||[]).map(o=>[o.cat,o.eSold,o.eC,o.eR.toFixed(2),o.hSold,o.hC,o.hR.toFixed(2)])]);
+$("expTeam").onclick=()=>dl("team.csv",[["主類別","子類別","E出售","E取消","E率%","H出售","H取消","H率%"],...(window.__team||[]).map(o=>[o.main,o.sub,o.eSold,o.eC,o.eR.toFixed(2),o.hSold,o.hC,o.hR.toFixed(2)])]);
 $("expDetail").onclick=()=>dl("detail.csv",[["訂單編號","SKU 名稱","SKU ID","退款件數","原因","平台","車隊","車隊代碼","送貨日期"],...(window.__detail||[]).map(r=>[r.order,r.sku_name,r.sku_id,r.refund,r.cancel_type,r.platform,r.team,r.carline,r.date])]);
 
 // store arr for threshold reapply
