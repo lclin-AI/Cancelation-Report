@@ -415,11 +415,13 @@ window.runAnalyze=function(){_ra();window.__lastArr=Object.values({});};
       if(!lr.ok) throw new Error('list HTTP '+lr.status);
       var lj = await lr.json();
       var files = (lj.files||[]).filter(function(f){var n=(f.name||'').toLowerCase();var mt=f.mimeType||'';return n.endsWith('.csv')||n.endsWith('.xlsx')||mt==='text/csv'||mt==='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';});
+      files=(lj.files||[]).filter(function(f){var n2=(f.name||'').toLowerCase();var mt2=f.mimeType||'';return n2.endsWith('.csv')||n2.endsWith('.xlsx')||mt2==='text/csv'||mt2.indexOf('spreadsheetml')!==-1||mt2.indexOf('google-apps.spreadsheet')!==-1;});
       if(!files.length){ say('資料夾中找不到 CSV 檔'); return; }
       var latest = files[0];
       say('載入最新檔案：'+latest.name+' …');
       var _n=(latest.name||'').toLowerCase();
 var _isXlsx = _n.endsWith('.xlsx') || (latest.mimeType||'').indexOf('spreadsheetml')>=0;
+      var _isGS=(latest.mimeType||'').indexOf('google-apps.spreadsheet')!==-1;function _colName(cn){var cs='';while(cn){var cm=(cn-1)%26;cs=String.fromCharCode(65+cm)+cs;cn=Math.floor((cn-1)/26);}return cs;}async function _loadSheet(sid){var base='https://sheets.googleapis.com/v4/spreadsheets/'+sid;var mj=await (await fetch(base+'?fields='+encodeURIComponent('sheets.properties(title,gridProperties)')+'&key='+DRIVE_API_KEY)).json();var pr=((mj.sheets||[])[0]||{}).properties||{};var stitle=pr.title||'Sheet1';var gp=pr.gridProperties||{};var rc=gp.rowCount||1000;var lc=_colName(gp.columnCount||26);var hdr=null,acc=[],start=1,step=20000;for(;;){var end=Math.min(rc,start+step-1);var rg=stitle+'!A'+start+':'+lc+end;var vj=await (await fetch(base+'/values/'+encodeURIComponent(rg)+'?key='+DRIVE_API_KEY)).json();var vals=vj.values||[];if(!vals.length)break;if(!hdr){hdr=vals.shift();}vals.forEach(function(v){var o={};hdr.forEach(function(h,ci){o[h]=(v[ci]===undefined||v[ci]===null)?'':v[ci];});acc.push(o);});say('\u8f09\u5165\u4e2d\u2026 '+acc.length+' \u5217');if(end===rc)break;start=end+1;}return acc;}if(_isGS){_finish(await _loadSheet(latest.id));return;}
 var dlUrl='https://www.googleapis.com/drive/v3/files/'+latest.id+'?alt=media&key='+DRIVE_API_KEY;
 var dr=await fetch(dlUrl);
 if(!dr.ok) throw new Error('download HTTP '+dr.status);
