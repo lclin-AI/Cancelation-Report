@@ -176,6 +176,7 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
         <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px">
           <div><label>取消率 &gt; (%)</label><input type="text" id="ivRate" value="1" style="width:80px"></div>
           <div><label>出售量 &gt; </label><input type="text" id="ivSold" value="100" style="width:80px"></div>
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--mut)"><input type="checkbox" id="ivGroupStore">按店舖分組</label>
           <button class="btn sec" id="ivApply" style="width:auto;padding:6px 14px">套用</button>
           <button class="btn ghost" id="ivExp" style="width:auto;padding:6px 14px">匯出 Invisible List CSV</button><button class="btn sec" id="ivFetchStatus" style="width:auto;padding:6px 14px">查詢狀態</button><button class="btn" id="ivSetInvisible" style="width:auto;padding:6px 14px">設為Invisible (已選)</button><button class="btn ghost" id="ivCancelSched" style="width:auto;padding:6px 14px">取消排程 (已選)</button>
         </div>
@@ -524,7 +525,24 @@ if(_isXlsx){
     list.sort(function(a,b){ var av=a[sortKey], bv=b[sortKey]; if(typeof av==="string"){ return sortDir*String(av).localeCompare(String(bv)); } return sortDir*((av||0)-(bv||0)); });
     CURRENT=list; window.__IV_CURRENT=list;
     var body=q("ivBody"); if(!body) return; var html="";
+    var GRP=(q("ivGroupStore")&&q("ivGroupStore").checked), GMETA={}, GORDER=[], GSEEN={};
+    if(GRP){
+      for(var gi=0;gi<list.length;gi++){ var go=list[gi], gk=(go.wet_market||"")+"||"+(go.store_name||"");
+        if(!GMETA[gk]){ GMETA[gk]={key:gk, wet_market:go.wet_market||"", store_name:go.store_name||"", n:0, sold:0, cancel:0, skus:[]}; GORDER.push(GMETA[gk]); }
+        var gm=GMETA[gk]; gm.n++; gm.sold+=(go.sold||0); gm.cancel+=(go.cancel||0); gm.skus.push(go.sku_id);
+      }
+      for(var gz=0;gz<GORDER.length;gz++){ GORDER[gz].rate=GORDER[gz].sold>0?(GORDER[gz].cancel/GORDER[gz].sold*100):0; }
+      GORDER.sort(function(a,b){ return (b.rate||0)-(a.rate||0); });
+      var glist=[];
+      for(var gy=0;gy<GORDER.length;gy++){ for(var gx=0;gx<list.length;gx++){ if(((list[gx].wet_market||"")+"||"+(list[gx].store_name||""))===GORDER[gy].key) glist.push(list[gx]); } }
+      list=glist;
+    }
     for(var i=0;i<list.length;i++){ var o=list[i];
+      if(GRP){ var ck=(o.wet_market||"")+"||"+(o.store_name||"");
+        if(!GSEEN[ck]){ GSEEN[ck]=1; var gm2=GMETA[ck];
+          html+="<tr class=\"ivGrpRow\" style=\"background:var(--panel2)\"><td style=\"text-align:center\"><input type=\"checkbox\" class=\"ivGrpChk\" data-skus=\""+esc(gm2.skus.join(","))+"\"></td><td colspan=\"20\" style=\"font-weight:600;color:var(--acc);padding:6px 4px\">"+esc(gm2.store_name||"(\u672a\u77e5\u5e97\u8216)")+" <span style=\"color:var(--mut);font-weight:400\">\u00b7 "+esc(gm2.wet_market)+" \u00b7 "+gm2.n+" SKU \u00b7 \u51fa\u552e "+gm2.sold+" \u00b7 \u53d6\u6d88 "+gm2.cancel+" \u00b7 \u53d6\u6d88\u7387 "+gm2.rate.toFixed(2)+"%</span></td></tr>";
+        }
+      }
       html+="<tr><td style=\"text-align:center\"><input type=\"checkbox\" class=\"ivChk\" data-sku=\""+esc(o.sku_id)+"\"></td><td>"+esc(o.wet_market)+"\x3c/td\x3e\x3ctd\x3e"+esc(o.store_name||"")+"</td><td>"+esc(o.sku_id)+"</td><td>"+esc(o.sku_name)+"</td><td style=\"text-align:right\">"+o.sold+"</td><td style=\"text-align:right\">"+o.cancel+"</td><td style=\"text-align:right;"+(o.rate>=5?"color:var(--red);font-weight:600":(o.rate>=2?"color:var(--acc);font-weight:600":""))+"\">"+o.rate.toFixed(2)+"</td><td class=\"ivStatus\" data-sku=\""+esc(o.sku_id)+"\" style=\"text-align:center;color:var(--mut)\">-</td></tr>";
     }
     body.innerHTML=html||("<tr><td colspan=\"10\" style=\"color:var(--mut);padding:10px\">no items (rate > "+rateTh+"% and sold > "+soldTh+")</td></tr>");
@@ -550,6 +568,7 @@ if(_isXlsx){
     document.querySelectorAll(".tab").forEach(function(el){ if(el.dataset.tab!=="invisible"){ el.addEventListener("click", function(){ var p=q("tab-invisible"); if(p) p.style.display="none"; }); } });
     var ap=q("ivApply"); if(ap) ap.addEventListener("click", render);
     var ex=q("ivExp"); if(ex) ex.addEventListener("click", exportCsv);
+      var gsb=q("ivGroupStore"); if(gsb){ gsb.addEventListener("change", function(){ render(); }); }
       var selAll=q("ivSelAll"); if(selAll){ selAll.addEventListener("change",function(){ var on=selAll.checked; document.querySelectorAll("#ivBody .ivChk").forEach(function(c){ c.checked=on; }); if(window.__ivUpdateSelCount) window.__ivUpdateSelCount(); }); }
       function getSelectedSkus(){ var out=[]; document.querySelectorAll("#ivBody .ivChk").forEach(function(c){ if(c.checked){ out.push(c.getAttribute("data-sku")); } }); return out; }
       function updateSelCount(){ var n=getSelectedSkus().length, tot=document.querySelectorAll("#ivBody .ivChk").length;
@@ -557,9 +576,18 @@ if(_isXlsx){
         var bs=q("ivSetInvisible"); if(bs){ bs.textContent=n?("設為Invisible (已選 "+n+")"):"設為Invisible (已選)"; }
         var bc=q("ivCancelSched"); if(bc){ bc.textContent=n?("取消排程 (已選 "+n+")"):"取消排程 (已選)"; }
         var sa=q("ivSelAll"); if(sa){ sa.checked=(tot>0&&n===tot); sa.indeterminate=(n>0&&n<tot); }
+        var gcs=document.querySelectorAll("#ivBody .ivGrpChk");
+        for(var gq=0;gq<gcs.length;gq++){ var sks=(gcs[gq].getAttribute("data-skus")||"").split(","), c1=0, t1=0;
+          for(var gr=0;gr<sks.length;gr++){ if(!sks[gr]) continue; var cb1=document.querySelector('#ivBody .ivChk[data-sku="'+sks[gr]+'"]'); if(cb1){ t1++; if(cb1.checked) c1++; } }
+          gcs[gq].checked=(t1>0&&c1===t1); gcs[gq].indeterminate=(c1>0&&c1<t1);
+        }
       }
       window.__ivUpdateSelCount=updateSelCount;
-      var ivbody=q("ivBody"); if(ivbody){ ivbody.addEventListener("change",function(e){ if(e.target&&e.target.classList&&e.target.classList.contains("ivChk")) updateSelCount(); }); }
+      var ivbody=q("ivBody"); if(ivbody){ ivbody.addEventListener("change",function(e){ var el=e.target; if(!el||!el.classList) return;
+        if(el.classList.contains("ivGrpChk")){ var sk=(el.getAttribute("data-skus")||"").split(",");
+          for(var gi=0;gi<sk.length;gi++){ if(!sk[gi]) continue; var cb=ivbody.querySelector('.ivChk[data-sku="'+sk[gi]+'"]'); if(cb) cb.checked=el.checked; }
+          updateSelCount(); return; }
+        if(el.classList.contains("ivChk")) updateSelCount(); }); }
       var canSch=q("ivCancelSched"); if(canSch){ canSch.addEventListener("click",function(){ var sel=getSelectedSkus(); if(!sel.length){ alert("未選擇 SKU。"); return; } if(typeof window.__ivCancelSchedAction==="function"){ window.__ivCancelSchedAction(sel); } else { alert("Invisible 功能未啟用。"); } }); }
       var setInv=q("ivSetInvisible"); if(setInv){ setInv.addEventListener("click",function(){ var sel=getSelectedSkus(); if(!sel.length){ alert("No SKU selected."); return; } if(typeof window.__ivSetInvisibleAction==="function"){ window.__ivSetInvisibleAction(sel); } else { alert("Selected "+sel.length+" SKU(s):\n"+sel.join(", ")+"\n\n(Action not yet configured.)"); } }); }
       var fetchBtn=q("ivFetchStatus"); if(fetchBtn){ fetchBtn.addEventListener("click",function(){ var skus=(window.__IV_CURRENT||[]).map(function(o){return o.sku_id;}); if(!skus.length){ alert("No SKU to query. Generate the Invisible List first."); return; } var info=q("ivInfo"); if(info){ info.textContent="Fetching Customer App status for "+skus.length+" SKU(s)..."; } document.querySelectorAll("#ivBody .ivStatus").forEach(function(td){ td.textContent="\u67e5\u8a62\u4e2d\u2026"; td.style.color="var(--muted)"; }); if(!window.SUPABASE_URL || !window.SUPABASE_ANON_KEY || window.SUPABASE_ANON_KEY.indexOf("__")===0){ if(info){info.textContent="Supabase key not configured. Set window.SUPABASE_ANON_KEY.";} return; } var uniq=Array.from(new Set(skus.filter(Boolean))); var CHUNK=200; var chunks=[]; for(var i=0;i<uniq.length;i+=CHUNK){ chunks.push(uniq.slice(i,i+CHUNK)); } var statusMap={}; Promise.all(chunks.map(function(ch){   var inList=ch.map(function(s){ return "\""+String(s).replace(/"/g,"")+"\""; }).join(",");   var url=window.SUPABASE_URL.replace(/\/$/,"")+"/rest/v1/cms_3p_sku?select=cms_sku,cms_online,cms_visible&cms_sku=in.("+encodeURIComponent(inList)+")";   return fetch(url,{headers:{apikey:window.SUPABASE_ANON_KEY,Authorization:"Bearer "+window.SUPABASE_ANON_KEY}}).then(function(r){ if(!r.ok){ throw new Error("HTTP "+r.status); } return r.json(); }).then(function(rows){ (rows||[]).forEach(function(row){ statusMap[row.cms_sku]=row.cms_visible; }); }); })).then(function(){   var painted={}; var hit=0;   skus.forEach(function(s){ if(statusMap.hasOwnProperty(s)){ painted[s]=statusMap[s]; hit++; } });   if(window.__ivSetStatus){ window.__ivSetStatus(painted); }   if(info){ info.textContent="Customer App status: "+hit+" / "+skus.length+" SKU(s) matched."; } }).catch(function(e){   if(info){ info.textContent="Status query failed: "+e.message; }   document.querySelectorAll("#ivBody .ivStatus").forEach(function(td){ td.textContent="\u2014"; td.style.color="var(--muted)"; }); });}); }
