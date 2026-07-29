@@ -627,6 +627,9 @@ if(_isXlsx){
   var COLOR = { pending:"var(--acc)", invisible:"var(--red)", reverted:"var(--grn)", failed:"var(--red)", cancelled:"var(--mut)" };
   var EVENT = { requested:"已排隊", invisible_applied:"CMS 已設 Invisible", revert_applied:"CMS 已復原 Visible", revert_requested:"要求即時復原", schedule_updated:"更新排程", schedule_cancelled:"取消排程", cancelled:"取消", failed:"失敗" };
 
+  var BUSY = {}, BUSYSKU = {};
+  function setBusy(id, label){ if(label){ BUSY[id] = label; } else { delete BUSY[id]; } renderTasks(); }
+  function setBusySku(sku, label){ if(label){ BUSYSKU[sku] = label; } else { delete BUSYSKU[sku]; } renderRowHints(); }
   function rest(path, opts){ return fetch(base()+"/rest/v1/"+path, Object.assign({ headers: hdr() }, opts || {})); }
   function rpc(fn, args){
     return rest("rpc/"+fn, { method:"POST", body: JSON.stringify(args || {}) }).then(function(r){
@@ -664,10 +667,13 @@ if(_isXlsx){
     if(btn){ btn.disabled = true; btn.textContent = "處理中…"; }
     rpc("request_sku_invisible", { p_sku: sku, p_sku_name: row ? row.sku_name : null, p_wet_market: row ? row.wet_market : null,
         p_store_name: row ? row.store_name : null, p_days: d, p_requested_by: "invisible-list" })
-      .then(function(){ return poke(); })
-      .then(function(){ return loadTasks(); })
-      .then(function(){ loadLogs(); if(btn){ btn.disabled = false; btn.textContent = "Invisible"; } })
-      .catch(function(e){ alert("排隊失敗: " + e.message); if(btn){ btn.disabled = false; btn.textContent = "Invisible"; } });
+      .then(function(tk){ var tid = (tk && tk.id) ? tk.id : null;
+        BUSYSKU[sku] = "已排隊 · CMS 更新中…"; if(tid){ BUSY[tid] = "CMS 更新中…"; }
+        return loadTasks().then(function(){ loadLogs(); return poke(); })
+          .then(function(){ delete BUSYSKU[sku]; if(tid){ delete BUSY[tid]; } return loadTasks(); })
+          .then(function(){ loadLogs(); }); })
+      .then(function(){ if(btn){ btn.disabled = false; btn.textContent = "Invisible"; } })
+      .catch(function(e){ delete BUSYSKU[sku]; renderRowHints(); alert("排隊失敗: " + e.message); if(btn){ btn.disabled = false; btn.textContent = "Invisible"; } });
   }
   window.__ivSetInvisibleAction = function(skus){
     if(!skus || !skus.length) return;
@@ -675,8 +681,9 @@ if(_isXlsx){
     if(!confirm("在 CMS 將 " + skus.length + " 個 SKU 設為 Invisible，並於 " + d + " 日後自動復原？")) return;
     var i = 0;
     (function next(){
-      if(i >= skus.length){ poke().then(loadTasks).then(loadLogs); return; }
+      if(i >= skus.length){ loadTasks().then(function(){ loadLogs(); return poke(); }).then(function(){ for(var z=0;z<skus.length;z++){ delete BUSYSKU[skus[z]]; } return loadTasks(); }).then(function(){ loadLogs(); }); return; }
       var sku = skus[i++], row = rowOf(sku);
+      BUSYSKU[sku] = "已排隊 · CMS 更新中…"; renderRowHints();
       rpc("request_sku_invisible", { p_sku: sku, p_sku_name: row ? row.sku_name : null, p_wet_market: row ? row.wet_market : null,
           p_store_name: row ? row.store_name : null, p_days: d, p_requested_by: "invisible-list-bulk" }).then(next, next);
     })();
@@ -688,7 +695,9 @@ if(_isXlsx){
       var td = tds[i], sku = td.getAttribute("data-sku"), t = taskFor(sku);
       var hint = td.querySelector(".ivHint");
       if(!hint){ hint = document.createElement("div"); hint.className = "ivHint"; hint.style.fontSize = "10px"; hint.style.marginTop = "2px"; td.appendChild(hint); }
-      if(t){ hint.textContent = (LABEL[t.status] || t.status) + " · " + fmt(t.scheduled_visible_at) + " 復原"; hint.style.color = COLOR[t.status] || "var(--mut)"; }
+      var bz = BUSYSKU[sku] || (t ? BUSY[t.id] : null);
+      if(bz){ hint.textContent = bz; hint.style.color = "var(--acc)"; }
+      else if(t){ hint.textContent = (LABEL[t.status] || t.status) + (t.scheduled_visible_at ? (" · " + fmt(t.scheduled_visible_at) + " 復原") : " · 無排程"); hint.style.color = COLOR[t.status] || "var(--mut)"; }
       else { hint.textContent = ""; }
     }
   }
@@ -732,7 +741,7 @@ if(_isXlsx){
         + '<td style="text-align:left">' + esc(t.cms_sku) + '</td>'
         + '<td style="text-align:left">' + esc(t.sku_name || "") + '</td>'
         + '<td style="text-align:left">' + esc(t.wet_market || "") + '</td>'
-        + '<td style="text-align:center;color:' + (COLOR[t.status] || "var(--mut)") + '">' + esc(LABEL[t.status] || t.status) + '</td>'
+        + '<td style="text-align:center;color:' + (BUSY[t.id] ? "var(--acc)" : (COLOR[t.status] || "var(--mut)")) + '">' + esc(LABEL[t.status] || t.status) + (BUSY[t.id] ? '<div style="font-size:10px;color:var(--acc);margin-top:2px">' + esc(BUSY[t.id]) + '</div>' : '') + '</td>'
         + '<td style="text-align:left">' + fmt(t.applied_at || t.requested_at) + '</td>'
         + '<td style="text-align:left">' + (live ? ('<input type="datetime-local" class="ivtSched" data-id="' + t.id + '" value="' + localValue(t.scheduled_visible_at) + '" style="width:180px;margin-top:0">') + (t.scheduled_visible_at ? '' : ' <span class="muted" style="font-size:11px">無排程（手動復原）</span>') : fmt(t.reverted_at || t.scheduled_visible_at)) + '</td>'
         + '<td style="text-align:center;white-space:nowrap">' + (live ? ('<button class="btn sec ivtSave" data-id="' + t.id + '" style="width:auto;padding:3px 8px;font-size:11px">存排程</button> ' + (t.scheduled_visible_at ? '<button class="btn ghost ivtNoSched" data-id="' + t.id + '" style="width:auto;padding:3px 8px;font-size:11px">取消排程</button> ' : '') + '<button class="btn ghost ivtNow" data-id="' + t.id + '" style="width:auto;padding:3px 8px;font-size:11px">' + (t.status === "pending" ? "取消" : "即時復原") + '</button>') : "-") + '</td>'
@@ -747,9 +756,10 @@ if(_isXlsx){
         var id = this.getAttribute("data-id");
         var inp = body.querySelector('.ivtSched[data-id="' + id + '"]');
         if(!inp || !inp.value){ return; }
+        setBusy(Number(id), "更新排程中…");
         rpc("reschedule_sku_invisible", { p_task_id: Number(id), p_visible_at: new Date(inp.value).toISOString(), p_actor: "ui" })
-          .then(function(){ loadTasks(); loadLogs(); })
-          .catch(function(e){ alert("更新排程失敗: " + e.message); });
+          .then(function(){ setBusy(Number(id), null); loadTasks(); loadLogs(); })
+          .catch(function(e){ setBusy(Number(id), null); alert("更新排程失敗: " + e.message); });
       };
     }
     var nosched = body.querySelectorAll(".ivtNoSched");
@@ -769,10 +779,13 @@ if(_isXlsx){
       nows[b2].onclick = function(){
         var id = this.getAttribute("data-id");
         if(!confirm("確定要執行？")) return;
+        setBusy(Number(id), "CMS 處理中…");
         rpc("cancel_sku_invisible", { p_task_id: Number(id), p_actor: "ui" })
-          .then(function(){ return poke(); })
-          .then(function(){ loadTasks(); loadLogs(); })
-          .catch(function(e){ alert("失敗: " + e.message); });
+          .then(function(){ return loadTasks(); })
+          .then(function(){ loadLogs(); return poke(); })
+          .then(function(){ setBusy(Number(id), null); return loadTasks(); })
+          .then(function(){ loadLogs(); })
+          .catch(function(e){ setBusy(Number(id), null); alert("失敗: " + e.message); });
       };
     }
     renderRowHints();
