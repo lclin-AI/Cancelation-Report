@@ -180,6 +180,7 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
           <button class="btn ghost" id="ivExp" style="width:auto;padding:6px 14px">匯出 Invisible List CSV</button><button class="btn sec" id="ivFetchStatus" style="width:auto;padding:6px 14px">查詢狀態</button><button class="btn" id="ivSetInvisible" style="width:auto;padding:6px 14px">設為Invisible (已選)</button>
         </div>
         <div id="ivInfo" style="font-size:12px;color:var(--mut);margin-bottom:6px"></div>
+        <div id="ivSelInfo" style="font-size:12px;color:var(--acc);margin-bottom:6px">已選 0 個 SKU</div>
         <div style="overflow:auto;max-height:70vh">
           <table class="thin" id="ivTable" style="width:100%;border-collapse:collapse">
             <thead><tr>
@@ -528,6 +529,7 @@ if(_isXlsx){
     }
     body.innerHTML=html||("<tr><td colspan=\"10\" style=\"color:var(--mut);padding:10px\">no items (rate > "+rateTh+"% and sold > "+soldTh+")</td></tr>");
     var info=q("ivInfo"); if(info){ info.textContent="Matched: "+list.length+" items (rate > "+rateTh+"%, sold > "+soldTh+")"; }
+    if(window.__ivUpdateSelCount) window.__ivUpdateSelCount();
   }
   function exportCsv(){
     var rows=[["Wet Market","Store","SKU ID","SKU Name","Sold","Cancel","Rate %"]];
@@ -548,8 +550,15 @@ if(_isXlsx){
     document.querySelectorAll(".tab").forEach(function(el){ if(el.dataset.tab!=="invisible"){ el.addEventListener("click", function(){ var p=q("tab-invisible"); if(p) p.style.display="none"; }); } });
     var ap=q("ivApply"); if(ap) ap.addEventListener("click", render);
     var ex=q("ivExp"); if(ex) ex.addEventListener("click", exportCsv);
-      var selAll=q("ivSelAll"); if(selAll){ selAll.addEventListener("change",function(){ var on=selAll.checked; document.querySelectorAll("#ivBody .ivChk").forEach(function(c){ c.checked=on; }); }); }
+      var selAll=q("ivSelAll"); if(selAll){ selAll.addEventListener("change",function(){ var on=selAll.checked; document.querySelectorAll("#ivBody .ivChk").forEach(function(c){ c.checked=on; }); if(window.__ivUpdateSelCount) window.__ivUpdateSelCount(); }); }
       function getSelectedSkus(){ var out=[]; document.querySelectorAll("#ivBody .ivChk").forEach(function(c){ if(c.checked){ out.push(c.getAttribute("data-sku")); } }); return out; }
+      function updateSelCount(){ var n=getSelectedSkus().length, tot=document.querySelectorAll("#ivBody .ivChk").length;
+        var el=q("ivSelInfo"); if(el){ el.textContent="已選 "+n+" 個 SKU（共 "+tot+" 個）"; el.style.color=n?"var(--acc)":"var(--mut)"; }
+        var bs=q("ivSetInvisible"); if(bs){ bs.textContent=n?("設為Invisible (已選 "+n+")"):"設為Invisible (已選)"; }
+        var sa=q("ivSelAll"); if(sa){ sa.checked=(tot>0&&n===tot); sa.indeterminate=(n>0&&n<tot); }
+      }
+      window.__ivUpdateSelCount=updateSelCount;
+      var ivbody=q("ivBody"); if(ivbody){ ivbody.addEventListener("change",function(e){ if(e.target&&e.target.classList&&e.target.classList.contains("ivChk")) updateSelCount(); }); }
       var setInv=q("ivSetInvisible"); if(setInv){ setInv.addEventListener("click",function(){ var sel=getSelectedSkus(); if(!sel.length){ alert("No SKU selected."); return; } if(typeof window.__ivSetInvisibleAction==="function"){ window.__ivSetInvisibleAction(sel); } else { alert("Selected "+sel.length+" SKU(s):\n"+sel.join(", ")+"\n\n(Action not yet configured.)"); } }); }
       var fetchBtn=q("ivFetchStatus"); if(fetchBtn){ fetchBtn.addEventListener("click",function(){ var skus=(window.__IV_CURRENT||[]).map(function(o){return o.sku_id;}); if(!skus.length){ alert("No SKU to query. Generate the Invisible List first."); return; } var info=q("ivInfo"); if(info){ info.textContent="Fetching Customer App status for "+skus.length+" SKU(s)..."; } document.querySelectorAll("#ivBody .ivStatus").forEach(function(td){ td.textContent="\u67e5\u8a62\u4e2d\u2026"; td.style.color="var(--muted)"; }); if(!window.SUPABASE_URL || !window.SUPABASE_ANON_KEY || window.SUPABASE_ANON_KEY.indexOf("__")===0){ if(info){info.textContent="Supabase key not configured. Set window.SUPABASE_ANON_KEY.";} return; } var uniq=Array.from(new Set(skus.filter(Boolean))); var CHUNK=200; var chunks=[]; for(var i=0;i<uniq.length;i+=CHUNK){ chunks.push(uniq.slice(i,i+CHUNK)); } var statusMap={}; Promise.all(chunks.map(function(ch){   var inList=ch.map(function(s){ return "\""+String(s).replace(/"/g,"")+"\""; }).join(",");   var url=window.SUPABASE_URL.replace(/\/$/,"")+"/rest/v1/cms_3p_sku?select=cms_sku,cms_online,cms_visible&cms_sku=in.("+encodeURIComponent(inList)+")";   return fetch(url,{headers:{apikey:window.SUPABASE_ANON_KEY,Authorization:"Bearer "+window.SUPABASE_ANON_KEY}}).then(function(r){ if(!r.ok){ throw new Error("HTTP "+r.status); } return r.json(); }).then(function(rows){ (rows||[]).forEach(function(row){ statusMap[row.cms_sku]=row.cms_visible; }); }); })).then(function(){   var painted={}; var hit=0;   skus.forEach(function(s){ if(statusMap.hasOwnProperty(s)){ painted[s]=statusMap[s]; hit++; } });   if(window.__ivSetStatus){ window.__ivSetStatus(painted); }   if(info){ info.textContent="Customer App status: "+hit+" / "+skus.length+" SKU(s) matched."; } }).catch(function(e){   if(info){ info.textContent="Status query failed: "+e.message; }   document.querySelectorAll("#ivBody .ivStatus").forEach(function(td){ td.textContent="\u2014"; td.style.color="var(--muted)"; }); });}); }
       window.__ivGetSkus=function(){ return (window.__IV_CURRENT||[]).map(function(o){return o.sku_id;}); };
