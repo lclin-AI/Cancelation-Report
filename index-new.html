@@ -181,6 +181,7 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
             <thead><tr>
               <th style="width:32px;text-align:center"><input type="checkbox" id="ivSelAll" title="選"></th>
               <th data-sort="wet_market" style="cursor:pointer;text-align:left">街市 Wet Market</th>
+              <th data-sort="store_name" style="cursor:pointer;text-align:left">店舖 Store</th>
               <th data-sort="sku_id" style="cursor:pointer;text-align:left">SKU ID</th>
               <th data-sort="sku_name" style="cursor:pointer;text-align:left">SKU 名稱</th>
               <th data-sort="sold" style="cursor:pointer;text-align:right">出售量</th>
@@ -506,6 +507,7 @@ if(_isXlsx){
       if(!sku||!wm) continue;
       var k=sku+"||"+wm;
       if(!m[k]) m[k]={sku_id:sku, sku_name:row["sku_name_chi"]||"", wet_market:wm, sold:0, cancel:0};
+      if(_store && String(m[k].store_name||"").indexOf(_store)===-1){ m[k].store_name = (m[k].store_name?m[k].store_name+", ":"")+_store; }
       m[k].sold+=num(row["quantity"]); m[k].cancel+=num(row["refund_quantity"]);
     }
     var list=[]; for(var kk in m){ var o=m[kk]; o.rate=o.sold>0?(o.cancel/o.sold*100):0; list.push(o);} return list;
@@ -517,14 +519,14 @@ if(_isXlsx){
     CURRENT=list; window.__IV_CURRENT=list;
     var body=q("ivBody"); if(!body) return; var html="";
     for(var i=0;i<list.length;i++){ var o=list[i];
-      html+="<tr><td style=\"text-align:center\"><input type=\"checkbox\" class=\"ivChk\" data-sku=\""+esc(o.sku_id)+"\"></td><td>"+esc(o.wet_market)+"</td><td>"+esc(o.sku_id)+"</td><td>"+esc(o.sku_name)+"</td><td style=\"text-align:right\">"+o.sold+"</td><td style=\"text-align:right\">"+o.cancel+"</td><td style=\"text-align:right;"+(o.rate>=5?"color:var(--red);font-weight:600":(o.rate>=2?"color:var(--acc);font-weight:600":""))+"\">"+o.rate.toFixed(2)+"</td><td class=\"ivStatus\" data-sku=\""+esc(o.sku_id)+"\" style=\"text-align:center;color:var(--mut)\">-</td></tr>";
+      html+="<tr><td style=\"text-align:center\"><input type=\"checkbox\" class=\"ivChk\" data-sku=\""+esc(o.sku_id)+"\"></td><td>"+esc(o.wet_market)+"\x3c/td\x3e\x3ctd\x3e"+esc(o.store_name||"")+"</td><td>"+esc(o.sku_id)+"</td><td>"+esc(o.sku_name)+"</td><td style=\"text-align:right\">"+o.sold+"</td><td style=\"text-align:right\">"+o.cancel+"</td><td style=\"text-align:right;"+(o.rate>=5?"color:var(--red);font-weight:600":(o.rate>=2?"color:var(--acc);font-weight:600":""))+"\">"+o.rate.toFixed(2)+"</td><td class=\"ivStatus\" data-sku=\""+esc(o.sku_id)+"\" style=\"text-align:center;color:var(--mut)\">-</td></tr>";
     }
-    body.innerHTML=html||("<tr><td colspan=\"8\" style=\"color:var(--mut);padding:10px\">no items (rate > "+rateTh+"% and sold > "+soldTh+")</td></tr>");
+    body.innerHTML=html||("<tr><td colspan=\"10\" style=\"color:var(--mut);padding:10px\">no items (rate > "+rateTh+"% and sold > "+soldTh+")</td></tr>");
     var info=q("ivInfo"); if(info){ info.textContent="Matched: "+list.length+" items (rate > "+rateTh+"%, sold > "+soldTh+")"; }
   }
   function exportCsv(){
-    var rows=[["Wet Market","SKU ID","SKU Name","Sold","Cancel","Rate %"]];
-    CURRENT.forEach(function(o){ rows.push([o.wet_market,o.sku_id,o.sku_name,o.sold,o.cancel,o.rate.toFixed(2)]); });
+    var rows=[["Wet Market","Store","SKU ID","SKU Name","Sold","Cancel","Rate %"]];
+    CURRENT.forEach(function(o){ rows.push([o.wet_market,o.store_name,o.sku_id,o.sku_name,o.sold,o.cancel,o.rate.toFixed(2)]); });
     var csv=rows.map(function(r){ return r.map(function(v){ v=String(v==null?"":v); return /[\",\n]/.test(v)?("\""+v.replace(/\"/g,"\"\"")+"\""):v; }).join(","); }).join(String.fromCharCode(10));
     var blob=new Blob([String.fromCharCode(0xFEFF)+csv],{type:"text/csv;charset=utf-8;"});
     var a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="invisible_list.csv"; document.body.appendChild(a); a.click(); a.remove();
