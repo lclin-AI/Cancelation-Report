@@ -55,6 +55,10 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
 .split{display:grid;grid-template-columns:1fr 1fr;gap:2px}
 .split .h{grid-column:span 3}
 .thin th,.thin td{padding:6px 6px}
+  #ivTable thead th{white-space:nowrap;vertical-align:bottom}
+  #ivTable th:nth-child(2),#ivTable td:nth-child(2),#ivTable th:nth-child(3),#ivTable td:nth-child(3),#ivTable th:nth-child(4),#ivTable td:nth-child(4),#ivTable th:nth-child(5),#ivTable td:nth-child(5){text-align:left}
+  #ivTable th:nth-child(2),#ivTable td:nth-child(2){width:104px}#ivTable th:nth-child(3),#ivTable td:nth-child(3){width:152px}#ivTable th:nth-child(4),#ivTable td:nth-child(4){width:164px;white-space:nowrap}
+  #ivTable th:nth-child(n+6),#ivTable td:nth-child(n+6){white-space:nowrap;font-variant-numeric:tabular-nums}#ivTable tbody tr:hover{background:#152230}
 </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
