@@ -605,5 +605,247 @@ if(_isXlsx){
 </script>
 
 <script>(function(){var busy=false,cool=0,tries=0,sig="",base="";function sel(s){return Array.prototype.slice.call(document.querySelectorAll(s));}function cells(){return sel("#ivBody .ivStatus").concat(sel("#ivBody .ivOnline"));}function ensure(){var tr=document.querySelector("#ivTable thead tr");if(tr&&!tr.querySelector(".ivOnlineTh")){var th=document.createElement("th");th.className="ivOnlineTh";th.style.textAlign="center";th.textContent="CMS \u4e0a\u67b6";tr.appendChild(th);}sel("#ivBody tr").forEach(function(r){if(r.querySelector(".ivOnline"))return;var st=r.querySelector(".ivStatus");if(!st)return;var td=document.createElement("td");td.className="ivOnline";td.setAttribute("data-sku",st.getAttribute("data-sku"));td.style.textAlign="center";td.style.color="var(--mut)";td.textContent="-";r.appendChild(td);});}function blank(t){t=(t||"").trim();return t===""||t==="-"||t==="\u2014";}function need(){var n=0;cells().forEach(function(td){if(blank(td.textContent))n++;});return n;}function mark(){cells().forEach(function(td){if(blank(td.textContent)){td.textContent="\u67e5\u8a62\u4e2d\u2026";td.style.color="var(--mut)";}});}function unmark(t2){cells().forEach(function(td){if(td.textContent.trim()==="\u67e5\u8a62\u4e2d\u2026"){td.textContent=t2;td.style.color="var(--mut)";}});}function info(m){var el=document.getElementById("ivInfo");if(!el)return;el.textContent=m?base+m:base;}function nowSig(){var c=sel("#ivBody .ivStatus");return c.length+":"+(c.length?c[0].getAttribute("data-sku"):"");}function run(){var skus=(window.__IV_CURRENT||[]).map(function(o){return o.sku_id;}).filter(Boolean);if(!skus.length||!window.SUPABASE_URL||!window.SUPABASE_ANON_KEY)return;var el=document.getElementById("ivInfo");base=el?el.textContent.split(" \u00b7 ")[0]:"";busy=true;mark();info(" \u00b7 \u8b80\u53d6 CMS \u72c0\u614b\u4e2d\u2026");var done=false;var seen={},uniq=[];skus.forEach(function(s){if(!seen[s]){seen[s]=1;uniq.push(s);}});var chunks=[],arr=uniq.slice();while(arr.length){chunks.push(arr.splice(0,150));}var vm={},om={};setTimeout(function(){if(done)return;done=true;busy=false;unmark("\u2014");info(" \u00b7 CMS \u72c0\u614b\u903e\u6642\uff0c\u91cd\u8a66\u4e2d\u2026");},25000);Promise.all(chunks.map(function(ch){var u=window.SUPABASE_URL+"/rest/v1/cms_3p_sku"+"?select=cms_sku,cms_online,cms_visible"+"&cms_sku=in.("+encodeURIComponent(ch.join(","))+")";return fetch(u,{headers:{apikey:window.SUPABASE_ANON_KEY,Authorization:"Bearer "+window.SUPABASE_ANON_KEY}}).then(function(r){return r.ok?r.json():[];}).then(function(rows){(rows||[]).forEach(function(row){vm[row.cms_sku]=row.cms_visible;om[row.cms_sku]=row.cms_online;});});})).then(function(){if(done)return;ensure();sel("#ivBody .ivOnline").forEach(function(td){var s=td.getAttribute("data-sku");var v=om[s];if(v===true){td.textContent="ON";td.style.color="var(--acc)";}else if(v===false){td.textContent="OFF";td.style.color="var(--red)";}else{td.textContent="n/a";td.style.color="var(--mut)";}});if(window.__ivSetStatus)window.__ivSetStatus(vm);var hit=0;uniq.forEach(function(s){if(vm.hasOwnProperty(s))hit++;});unmark("n/a");info(" \u00b7 CMS \u72c0\u614b: "+hit+"/"+uniq.length);done=true;busy=false;}).catch(function(){if(done)return;done=true;busy=false;unmark("\u2014");info(" \u00b7 CMS \u72c0\u614b\u8b80\u53d6\u5931\u6557\uff0c\u91cd\u8a66\u4e2d\u2026");});}setInterval(function(){ensure();var s2=nowSig();if(s2!==sig){sig=s2;tries=0;cool=0;}if(busy)return;if(!need()){tries=0;return;}if(cool){cool--;return;}if(tries===12)return;tries++;cool=4;run();},1200);})();</script>
+
+<script>
+/* ===== Invisible 排程：CMS「顯示於Customer App」自動 OFF，預設 3 日後自動 ON =====
+   流程：Invisible List 按鈕 -> Supabase 任務表 -> Edge Function 改 CMS -> 任務/記錄頁顯示狀態 */
+(function(){
+  var DAYS_DEFAULT = 3;
+  var TASKS = [], LOGS = [];
+  function base(){ return String(window.SUPABASE_URL || "").replace(/\/+$/, ""); }
+  function key(){ return String(window.SUPABASE_ANON_KEY || ""); }
+  function ready(){ return !!base() && !!key() && key().indexOf("__") !== 0; }
+  function hdr(){ return { "apikey": key(), "Authorization": "Bearer " + key(), "Content-Type": "application/json" }; }
+  function q(id){ return document.getElementById(id); }
+  function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]; }); }
+  function pad(n){ return (n < 10 ? "0" : "") + n; }
+  function fmt(ts){ if(!ts) return "-"; var d = new Date(ts); if(isNaN(d.getTime())) return String(ts);
+    return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())+" "+pad(d.getHours())+":"+pad(d.getMinutes()); }
+  function localValue(ts){ if(!ts) return ""; var d = new Date(ts); if(isNaN(d.getTime())) return "";
+    return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())+"T"+pad(d.getHours())+":"+pad(d.getMinutes()); }
+  var LABEL = { pending:"等待執行", invisible:"已 Invisible", reverted:"已復原 Visible", failed:"失敗", cancelled:"已取消" };
+  var COLOR = { pending:"var(--acc)", invisible:"var(--red)", reverted:"var(--grn)", failed:"var(--red)", cancelled:"var(--mut)" };
+  var EVENT = { requested:"已排隊", invisible_applied:"CMS 已設 Invisible", revert_applied:"CMS 已復原 Visible", revert_requested:"要求即時復原", schedule_updated:"更新排程", cancelled:"取消", failed:"失敗" };
+
+  function rest(path, opts){ return fetch(base()+"/rest/v1/"+path, Object.assign({ headers: hdr() }, opts || {})); }
+  function rpc(fn, args){
+    return rest("rpc/"+fn, { method:"POST", body: JSON.stringify(args || {}) }).then(function(r){
+      return r.text().then(function(t){
+        if(!r.ok) throw new Error(t.slice(0,300));
+        try { return JSON.parse(t); } catch(e){ return t; }
+      });
+    });
+  }
+  function poke(){
+    return fetch(base()+"/functions/v1/cms-visibility-worker", { method:"POST", headers: hdr(), body:"{}" })
+      .then(function(r){ return r.text(); })
+      .catch(function(e){ return "worker trigger failed: " + e.message; });
+  }
+  function loadTasks(){
+    if(!ready()) return Promise.resolve([]);
+    return rest("sku_invisible_task?select=*&order=id.desc&limit=300").then(function(r){ return r.json(); })
+      .then(function(j){ TASKS = Array.isArray(j) ? j : []; renderTasks(); return TASKS; })
+      .catch(function(e){ var el=q("ivtInfo"); if(el) el.textContent = "讀取任務失敗: " + e.message; return []; });
+  }
+  function loadLogs(){
+    if(!ready()) return Promise.resolve([]);
+    return rest("sku_invisible_log?select=*&order=id.desc&limit=500").then(function(r){ return r.json(); })
+      .then(function(j){ LOGS = Array.isArray(j) ? j : []; renderLogs(); return LOGS; })
+      .catch(function(e){ var el=q("ivlInfo"); if(el) el.textContent = "讀取記錄失敗: " + e.message; return []; });
+  }
+  function daysWanted(){ var el=q("ivDays"); var n = el ? parseInt(el.value, 10) : DAYS_DEFAULT; return (isNaN(n) || n < 0) ? DAYS_DEFAULT : n; }
+  function rowOf(sku){ var a = window.__IV_CURRENT || []; for(var i=0;i<a.length;i++){ if(a[i].sku_id === sku) return a[i]; } return null; }
+  function taskFor(sku){ for(var i=0;i<TASKS.length;i++){ if(TASKS[i].cms_sku === sku && (TASKS[i].status === "pending" || TASKS[i].status === "invisible")) return TASKS[i]; } return null; }
+
+  function setInvisible(sku, btn){
+    if(!ready()){ alert("Supabase 未設定，無法排隊。"); return; }
+    var d = daysWanted(), row = rowOf(sku);
+    if(!confirm("在 CMS 將 " + sku + " 設為 Invisible（顯示於Customer App = OFF）\n並於 " + d + " 日後自動復原 Visible？")) return;
+    if(btn){ btn.disabled = true; btn.textContent = "處理中…"; }
+    rpc("request_sku_invisible", { p_sku: sku, p_sku_name: row ? row.sku_name : null, p_wet_market: row ? row.wet_market : null,
+        p_store_name: row ? row.store_name : null, p_days: d, p_requested_by: "invisible-list" })
+      .then(function(){ return poke(); })
+      .then(function(){ return loadTasks(); })
+      .then(function(){ loadLogs(); if(btn){ btn.disabled = false; btn.textContent = "Invisible"; } })
+      .catch(function(e){ alert("排隊失敗: " + e.message); if(btn){ btn.disabled = false; btn.textContent = "Invisible"; } });
+  }
+  window.__ivSetInvisibleAction = function(skus){
+    if(!skus || !skus.length) return;
+    var d = daysWanted();
+    if(!confirm("在 CMS 將 " + skus.length + " 個 SKU 設為 Invisible，並於 " + d + " 日後自動復原？")) return;
+    var i = 0;
+    (function next(){
+      if(i >= skus.length){ poke().then(loadTasks).then(loadLogs); return; }
+      var sku = skus[i++], row = rowOf(sku);
+      rpc("request_sku_invisible", { p_sku: sku, p_sku_name: row ? row.sku_name : null, p_wet_market: row ? row.wet_market : null,
+          p_store_name: row ? row.store_name : null, p_days: d, p_requested_by: "invisible-list-bulk" }).then(next, next);
+    })();
+  };
+
+  function renderRowHints(){
+    var tds = document.querySelectorAll("#ivBody td.ivAct");
+    for(var i=0;i<tds.length;i++){
+      var td = tds[i], sku = td.getAttribute("data-sku"), t = taskFor(sku);
+      var hint = td.querySelector(".ivHint");
+      if(!hint){ hint = document.createElement("div"); hint.className = "ivHint"; hint.style.fontSize = "10px"; hint.style.marginTop = "2px"; td.appendChild(hint); }
+      if(t){ hint.textContent = (LABEL[t.status] || t.status) + " · " + fmt(t.scheduled_visible_at) + " 復原"; hint.style.color = COLOR[t.status] || "var(--mut)"; }
+      else { hint.textContent = ""; }
+    }
+  }
+  function injectColumn(){
+    var head = document.querySelector("#ivTable thead tr");
+    if(head && !head.querySelector(".ivActTh")){
+      var th = document.createElement("th"); th.className = "ivActTh"; th.style.textAlign = "center"; th.style.whiteSpace = "nowrap"; th.textContent = "Invisible";
+      head.appendChild(th);
+    }
+    var rows = document.querySelectorAll("#ivBody tr");
+    for(var i=0;i<rows.length;i++){
+      var tr = rows[i];
+      if(tr.querySelector(".ivAct")) continue;
+      var st = tr.querySelector(".ivStatus"); if(!st) continue;
+      var sku = st.getAttribute("data-sku"); if(!sku) continue;
+      var td = document.createElement("td"); td.className = "ivAct"; td.setAttribute("data-sku", sku);
+      td.style.textAlign = "center"; td.style.whiteSpace = "nowrap";
+      var b = document.createElement("button"); b.className = "btn"; b.textContent = "Invisible";
+      b.style.width = "auto"; b.style.margin = "0"; b.style.padding = "3px 10px"; b.style.fontSize = "11px"; b.style.background = "var(--red)";
+      b.onclick = (function(s){ return function(){ setInvisible(s, this); }; })(sku);
+      td.appendChild(b); tr.appendChild(td);
+    }
+    renderRowHints();
+  }
+  function injectDays(){
+    var host = q("ivSetInvisible");
+    if(!host || q("ivDays")) return;
+    var wrap = document.createElement("span");
+    wrap.style.display = "inline-flex"; wrap.style.alignItems = "center"; wrap.style.gap = "6px";
+    var lab = document.createElement("label"); lab.textContent = "自動復原 (日)"; lab.style.fontSize = "12px"; lab.style.color = "var(--mut)";
+    var inp = document.createElement("input"); inp.type = "text"; inp.id = "ivDays"; inp.value = String(DAYS_DEFAULT); inp.style.width = "54px"; inp.style.marginTop = "0";
+    wrap.appendChild(lab); wrap.appendChild(inp);
+    host.parentNode.insertBefore(wrap, host);
+  }
+  function renderTasks(){
+    var body = q("ivtBody"); if(!body) return;
+    var h = "";
+    for(var i=0;i<TASKS.length;i++){
+      var t = TASKS[i], live = (t.status === "pending" || t.status === "invisible");
+      h += '<tr>'
+        + '<td style="text-align:left">' + esc(t.cms_sku) + '</td>'
+        + '<td style="text-align:left">' + esc(t.sku_name || "") + '</td>'
+        + '<td style="text-align:left">' + esc(t.wet_market || "") + '</td>'
+        + '<td style="text-align:center;color:' + (COLOR[t.status] || "var(--mut)") + '">' + esc(LABEL[t.status] || t.status) + '</td>'
+        + '<td style="text-align:left">' + fmt(t.applied_at || t.requested_at) + '</td>'
+        + '<td style="text-align:left">' + (live ? ('<input type="datetime-local" class="ivtSched" data-id="' + t.id + '" value="' + localValue(t.scheduled_visible_at) + '" style="width:180px;margin-top:0">') : fmt(t.reverted_at || t.scheduled_visible_at)) + '</td>'
+        + '<td style="text-align:center;white-space:nowrap">' + (live ? ('<button class="btn sec ivtSave" data-id="' + t.id + '" style="width:auto;padding:3px 8px;font-size:11px">存排程</button> <button class="btn ghost ivtNow" data-id="' + t.id + '" style="width:auto;padding:3px 8px;font-size:11px">' + (t.status === "pending" ? "取消" : "即時復原") + '</button>') : "-") + '</td>'
+        + '<td style="text-align:left;color:var(--mut)">' + esc(t.last_error || "") + '</td>'
+        + '</tr>';
+    }
+    body.innerHTML = h || '<tr><td colspan="8" class="muted" style="padding:10px">未有任務</td></tr>';
+    var info = q("ivtInfo"); if(info) info.textContent = TASKS.length + " 個任務 · Supabase 每 5 分鐘自動檢查排程";
+    var saves = body.querySelectorAll(".ivtSave");
+    for(var a=0;a<saves.length;a++){
+      saves[a].onclick = function(){
+        var id = this.getAttribute("data-id");
+        var inp = body.querySelector('.ivtSched[data-id="' + id + '"]');
+        if(!inp || !inp.value){ return; }
+        rpc("reschedule_sku_invisible", { p_task_id: Number(id), p_visible_at: new Date(inp.value).toISOString(), p_actor: "ui" })
+          .then(function(){ loadTasks(); loadLogs(); })
+          .catch(function(e){ alert("更新排程失敗: " + e.message); });
+      };
+    }
+    var nows = body.querySelectorAll(".ivtNow");
+    for(var b2=0;b2<nows.length;b2++){
+      nows[b2].onclick = function(){
+        var id = this.getAttribute("data-id");
+        if(!confirm("確定要執行？")) return;
+        rpc("cancel_sku_invisible", { p_task_id: Number(id), p_actor: "ui" })
+          .then(function(){ return poke(); })
+          .then(function(){ loadTasks(); loadLogs(); })
+          .catch(function(e){ alert("失敗: " + e.message); });
+      };
+    }
+    renderRowHints();
+  }
+  function renderLogs(){
+    var body = q("ivlBody"); if(!body) return;
+    var h = "";
+    for(var i=0;i<LOGS.length;i++){
+      var g = LOGS[i];
+      h += '<tr>'
+        + '<td style="text-align:left;white-space:nowrap">' + fmt(g.created_at) + '</td>'
+        + '<td style="text-align:left">' + esc(g.cms_sku) + '</td>'
+        + '<td style="text-align:left">' + esc(EVENT[g.event] || g.event) + '</td>'
+        + '<td style="text-align:center;color:' + (COLOR[g.status] || "var(--mut)") + '">' + esc(LABEL[g.status] || g.status || "") + '</td>'
+        + '<td style="text-align:left;white-space:nowrap">' + fmt(g.scheduled_visible_at) + '</td>'
+        + '<td style="text-align:left">' + esc(g.message || "") + '</td>'
+        + '<td style="text-align:left;color:var(--mut)">' + esc(g.actor || "") + '</td>'
+        + '</tr>';
+    }
+    body.innerHTML = h || '<tr><td colspan="7" class="muted" style="padding:10px">未有記錄</td></tr>';
+    var info = q("ivlInfo"); if(info) info.textContent = LOGS.length + " 條記錄";
+  }
+
+  function injectTabs(){
+    var tabs = document.querySelector(".tabs");
+    var host = q("tab-invisible");
+    if(!tabs || !host || tabs.querySelector('[data-tab="ivtask"]')) return;
+    var mk = function(name, text){ var d = document.createElement("div"); d.className = "tab"; d.setAttribute("data-tab", name); d.textContent = text; tabs.appendChild(d); return d; };
+    var t1 = mk("ivtask", "Invisible 任務"), t2 = mk("ivlog", "Invisible 記錄");
+    var p1 = document.createElement("div"); p1.id = "tab-ivtask"; p1.style.display = "none";
+    p1.innerHTML = '<div class="card"><h2>Invisible 任務（排程自動復原）</h2>'
+      + '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">'
+      + '<button class="btn sec" id="ivtRefresh" style="width:auto;padding:6px 14px">重新載入</button>'
+      + '<button class="btn ghost" id="ivtRun" style="width:auto;padding:6px 14px">立即執行排程</button>'
+      + '<span class="muted" id="ivtInfo"></span></div>'
+      + '<div style="overflow:auto;max-height:70vh"><table class="thin" style="width:100%;border-collapse:collapse"><thead><tr>'
+      + '<th style="text-align:left">SKU</th><th style="text-align:left">名稱</th><th style="text-align:left">街市</th>'
+      + '<th style="text-align:center">狀態</th><th style="text-align:left">Invisible 時間</th>'
+      + '<th style="text-align:left">排程復原 Visible</th><th style="text-align:center">動作</th><th style="text-align:left">備註</th>'
+      + '</tr></thead><tbody id="ivtBody"></tbody></table></div></div>';
+    var p2 = document.createElement("div"); p2.id = "tab-ivlog"; p2.style.display = "none";
+    p2.innerHTML = '<div class="card"><h2>Invisible 記錄（Log）</h2>'
+      + '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">'
+      + '<button class="btn sec" id="ivlRefresh" style="width:auto;padding:6px 14px">重新載入</button>'
+      + '<span class="muted" id="ivlInfo"></span></div>'
+      + '<div style="overflow:auto;max-height:70vh"><table class="thin" style="width:100%;border-collapse:collapse"><thead><tr>'
+      + '<th style="text-align:left">時間</th><th style="text-align:left">SKU</th><th style="text-align:left">事件</th>'
+      + '<th style="text-align:center">狀態</th><th style="text-align:left">排程復原</th><th style="text-align:left">訊息</th><th style="text-align:left">來源</th>'
+      + '</tr></thead><tbody id="ivlBody"></tbody></table></div></div>';
+    host.parentNode.appendChild(p1);
+    host.parentNode.appendChild(p2);
+    var show = function(which){
+      var all = document.querySelectorAll(".tabs .tab");
+      for(var i=0;i<all.length;i++){ all[i].classList.toggle("on", all[i].getAttribute("data-tab") === which); }
+      var names = ["main","detail","invisible"];
+      for(var j=0;j<names.length;j++){ var p = q("tab-" + names[j]); if(p) p.style.display = "none"; }
+      p1.style.display = (which === "ivtask") ? "block" : "none";
+      p2.style.display = (which === "ivlog") ? "block" : "none";
+    };
+    t1.addEventListener("click", function(){ show("ivtask"); loadTasks(); loadLogs(); });
+    t2.addEventListener("click", function(){ show("ivlog"); loadLogs(); });
+    var others = document.querySelectorAll(".tabs .tab");
+    for(var k=0;k<others.length;k++){
+      var dt = others[k].getAttribute("data-tab");
+      if(dt === "ivtask" || dt === "ivlog") continue;
+      others[k].addEventListener("click", function(){ p1.style.display = "none"; p2.style.display = "none"; });
+    }
+    var rf = q("ivtRefresh"); if(rf) rf.onclick = function(){ loadTasks(); loadLogs(); };
+    var rn = q("ivtRun"); if(rn) rn.onclick = function(){ var el = q("ivtInfo"); if(el) el.textContent = "執行中…"; poke().then(function(){ return loadTasks(); }).then(function(){ loadLogs(); }); };
+    var rl = q("ivlRefresh"); if(rl) rl.onclick = function(){ loadLogs(); };
+  }
+  function boot(){
+    injectTabs(); injectDays(); injectColumn();
+    if(window.__ivTaskBooted) return;
+    window.__ivTaskBooted = true;
+    loadTasks(); loadLogs();
+    setInterval(function(){ injectDays(); injectColumn(); }, 1500);
+    setInterval(function(){
+      var a = q("tab-ivtask"), b = q("tab-ivlog");
+      if((a && a.style.display !== "none") || (b && b.style.display !== "none")){ loadTasks(); loadLogs(); }
+    }, 30000);
+  }
+  if(document.readyState === "loading"){ document.addEventListener("DOMContentLoaded", boot); } else { boot(); }
+  setTimeout(boot, 1500);
+})();
+</script>
 </body>
 </html>
