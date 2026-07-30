@@ -176,6 +176,7 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
         <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px">
           <div><label>取消率 &gt; (%)</label><input type="text" id="ivRate" value="1" style="width:80px"></div>
           <div><label>出售量 &gt; </label><input type="text" id="ivSold" value="100" style="width:80px"></div>
+          <div><label>店舖 Store</label><select id="ivStore" style="width:200px"><option value="">全部店舖</option></select></div>
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--mut)"><input type="checkbox" id="ivGroupStore">按店舖分組</label>
           <button class="btn sec" id="ivApply" style="width:auto;padding:6px 14px">套用</button>
           <button class="btn ghost" id="ivExp" style="width:auto;padding:6px 14px">匯出 Invisible List CSV</button><button class="btn sec" id="ivFetchStatus" style="width:auto;padding:6px 14px">查詢狀態</button><button class="btn" id="ivSetInvisible" style="width:auto;padding:6px 14px">設為Invisible (已選)</button><button class="btn ghost" id="ivCancelSched" style="width:auto;padding:6px 14px">取消排程 (已選)</button>
@@ -522,6 +523,19 @@ if(_isXlsx){
   function render(){
     var rateTh=num((q("ivRate")||{}).value)||0, soldTh=num((q("ivSold")||{}).value)||0;
     var list=compute().filter(function(o){ return o.rate>rateTh && o.sold>soldTh; });
+    var stSel=q("ivStore"), stVal=stSel?stSel.value:"";
+    if(stSel){ var snames={}; for(var si=0;si<list.length;si++){ var sn=list[si].store_name||""; if(sn) snames[sn]=1; }
+      var skeys=Object.keys(snames).sort(function(a,b){ return String(a).localeCompare(String(b)); });
+      var ssig=skeys.join("|");
+      if(stSel.getAttribute("data-sig")!==ssig){ stSel.setAttribute("data-sig", ssig);
+        var sopt='<option value="">\u5168\u90e8\u5e97\u8216</option>';
+        for(var sj=0;sj<skeys.length;sj++){ sopt+='<option value="'+esc(skeys[sj])+'">'+esc(skeys[sj])+'</option>'; }
+        stSel.innerHTML=sopt;
+        if(skeys.indexOf(stVal)>=0){ stSel.value=stVal; } else { stSel.value=""; stVal=""; }
+      }
+      if(stVal && skeys.indexOf(stVal)<0){ stSel.value=""; stVal=""; }
+    }
+    if(stVal){ list=list.filter(function(o){ return (o.store_name||"")===stVal; }); }
     list.sort(function(a,b){ var av=a[sortKey], bv=b[sortKey]; if(typeof av==="string"){ return sortDir*String(av).localeCompare(String(bv)); } return sortDir*((av||0)-(bv||0)); });
     CURRENT=list; window.__IV_CURRENT=list;
     var body=q("ivBody"); if(!body) return; var html="";
@@ -546,7 +560,7 @@ if(_isXlsx){
       html+="<tr><td style=\"text-align:center\"><input type=\"checkbox\" class=\"ivChk\" data-sku=\""+esc(o.sku_id)+"\"></td><td>"+esc(o.wet_market)+"\x3c/td\x3e\x3ctd\x3e"+esc(o.store_name||"")+"</td><td>"+esc(o.sku_id)+"</td><td>"+esc(o.sku_name)+"</td><td style=\"text-align:right\">"+o.sold+"</td><td style=\"text-align:right\">"+o.cancel+"</td><td style=\"text-align:right;"+(o.rate>=5?"color:var(--red);font-weight:600":(o.rate>=2?"color:var(--acc);font-weight:600":""))+"\">"+o.rate.toFixed(2)+"</td><td class=\"ivStatus\" data-sku=\""+esc(o.sku_id)+"\" style=\"text-align:center;color:var(--mut)\">-</td></tr>";
     }
     body.innerHTML=html||("<tr><td colspan=\"10\" style=\"color:var(--mut);padding:10px\">no items (rate > "+rateTh+"% and sold > "+soldTh+")</td></tr>");
-    var info=q("ivInfo"); if(info){ info.textContent="Matched: "+list.length+" items (rate > "+rateTh+"%, sold > "+soldTh+")"; }
+    var info=q("ivInfo"); if(info){ info.textContent="Matched: "+list.length+" items (rate > "+rateTh+"%, sold > "+soldTh+")"+(stVal?(" \u00b7 \u5e97\u8216: "+stVal):""); }
     if(window.__ivUpdateSelCount) window.__ivUpdateSelCount();
   }
   function exportCsv(){
@@ -569,6 +583,7 @@ if(_isXlsx){
     var ap=q("ivApply"); if(ap) ap.addEventListener("click", render);
     var ex=q("ivExp"); if(ex) ex.addEventListener("click", exportCsv);
       var gsb=q("ivGroupStore"); if(gsb){ gsb.addEventListener("change", function(){ render(); }); }
+      var stb=q("ivStore"); if(stb){ stb.addEventListener("change", function(){ render(); }); }
       var selAll=q("ivSelAll"); if(selAll){ selAll.addEventListener("change",function(){ var on=selAll.checked; document.querySelectorAll("#ivBody .ivChk").forEach(function(c){ c.checked=on; }); if(window.__ivUpdateSelCount) window.__ivUpdateSelCount(); }); }
       function getSelectedSkus(){ var out=[]; document.querySelectorAll("#ivBody .ivChk").forEach(function(c){ if(c.checked){ out.push(c.getAttribute("data-sku")); } }); return out; }
       function updateSelCount(){ var n=getSelectedSkus().length, tot=document.querySelectorAll("#ivBody .ivChk").length;
