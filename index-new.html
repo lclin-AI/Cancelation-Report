@@ -176,7 +176,7 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
         <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px">
           <div><label>取消率 &gt; (%)</label><input type="text" id="ivRate" value="1" style="width:80px"></div>
           <div><label>出售量 &gt; </label><input type="text" id="ivSold" value="100" style="width:80px"></div>
-          <div><label>街市 Wet Market</label><select id="ivMarket" style="width:180px"><option value="">全部街市</option></select></div><div><label>店舖 Store</label><select id="ivStore" style="width:200px"><option value="">全部店舖</option></select></div>
+          <div><label>街市 Wet Market</label><select id="ivMarket" style="width:180px"><option value="">全部街市</option></select></div><div><label>店舖 Store</label><select id="ivStore" style="width:200px"><option value="">全部店舖</option></select></div><div><label>排序 Sort</label><select id="ivSortMode" style="width:190px"><option value="rate">取消率</option><option value="market">街市 → 取消率</option></select></div>
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--mut)"><input type="checkbox" id="ivGroupStore">按街市 / 店舖分組</label>
           <button class="btn sec" id="ivApply" style="width:auto;padding:6px 14px">套用</button>
           <button class="btn ghost" id="ivExp" style="width:auto;padding:6px 14px">匯出 Invisible List CSV</button><button class="btn sec" id="ivFetchStatus" style="width:auto;padding:6px 14px">查詢狀態</button><button class="btn" id="ivSetInvisible" style="width:auto;padding:6px 14px">設為Invisible (已選)</button><button class="btn ghost" id="ivCancelSched" style="width:auto;padding:6px 14px">取消排程 (已選)</button>
@@ -549,7 +549,9 @@ if(_isXlsx){
       if(stVal && skeys.indexOf(stVal)<0){ stSel.value=""; stVal=""; }
     }
     if(stVal){ list=list.filter(function(o){ return (o.store_name||"")===stVal; }); }
-    list.sort(function(a,b){ var av=a[sortKey], bv=b[sortKey]; if(typeof av==="string"){ return sortDir*String(av).localeCompare(String(bv)); } return sortDir*((av||0)-(bv||0)); });
+    var SMODE=(q("ivSortMode")&&q("ivSortMode").value)||"rate";
+    list.sort(function(a,b){ if(SMODE==="market"){ var wa=String(a.wet_market||""), wb=String(b.wet_market||""); if(wa!==wb) return wa.localeCompare(wb); }
+      var av=a[sortKey], bv=b[sortKey]; if(typeof av==="string"){ return sortDir*String(av).localeCompare(String(bv)); } return sortDir*((av||0)-(bv||0)); });
     CURRENT=list; window.__IV_CURRENT=list;
     var body=q("ivBody"); if(!body) return; var html="";
     var GRP=(q("ivGroupStore")&&q("ivGroupStore").checked), GMETA={}, GORDER=[], GSEEN={}, MMETA={}, MORDER=[], MSEEN={};
@@ -563,7 +565,8 @@ if(_isXlsx){
       }
       for(var gz=0;gz<GORDER.length;gz++){ GORDER[gz].rate=GORDER[gz].sold>0?(GORDER[gz].cancel/GORDER[gz].sold*100):0; }
       for(var mz=0;mz<MORDER.length;mz++){ MORDER[mz].rate=MORDER[mz].sold>0?(MORDER[mz].cancel/MORDER[mz].sold*100):0; }
-      MORDER.sort(function(a,b){ return (b.rate||0)-(a.rate||0); });
+      if(SMODE==="market"){ MORDER.sort(function(a,b){ return String(a.key||"").localeCompare(String(b.key||"")); }); }
+      else { MORDER.sort(function(a,b){ return (b.rate||0)-(a.rate||0); }); }
       var MRANK={}; for(var mr=0;mr<MORDER.length;mr++){ MRANK[MORDER[mr].key]=mr; }
       GORDER.sort(function(a,b){ var ra=MRANK[a.wet_market], rb=MRANK[b.wet_market]; if(ra!==rb) return ra-rb; return (b.rate||0)-(a.rate||0); });
       var glist=[];
@@ -607,6 +610,7 @@ if(_isXlsx){
       var gsb=q("ivGroupStore"); if(gsb){ gsb.addEventListener("change", function(){ render(); }); }
       var stb=q("ivStore"); if(stb){ stb.addEventListener("change", function(){ render(); }); }
       var mkb=q("ivMarket"); if(mkb){ mkb.addEventListener("change", function(){ render(); }); }
+      var smb=q("ivSortMode"); if(smb){ smb.addEventListener("change", function(){ render(); }); }
       var selAll=q("ivSelAll"); if(selAll){ selAll.addEventListener("change",function(){ var on=selAll.checked; document.querySelectorAll("#ivBody .ivChk").forEach(function(c){ c.checked=on; }); if(window.__ivUpdateSelCount) window.__ivUpdateSelCount(); }); }
       function getSelectedSkus(){ var out=[]; document.querySelectorAll("#ivBody .ivChk").forEach(function(c){ if(c.checked){ out.push(c.getAttribute("data-sku")); } }); return out; }
       function updateSelCount(){ var n=getSelectedSkus().length, tot=document.querySelectorAll("#ivBody .ivChk").length;
