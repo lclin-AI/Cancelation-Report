@@ -179,7 +179,7 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
           <div><label>街市 Wet Market</label><select id="ivMarket" style="width:180px"><option value="">全部街市</option></select></div><div><label>店舖 Store</label><select id="ivStore" style="width:200px"><option value="">全部店舖</option></select></div><div><label>排序 Sort</label><select id="ivSortMode" style="width:190px"><option value="rate">取消率</option><option value="market">街市 → 取消率</option></select></div>
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--mut)"><input type="checkbox" id="ivGroupStore">按街市 / 店舖分組</label>
           <button class="btn sec" id="ivApply" style="width:auto;padding:6px 14px">套用</button>
-          <button class="btn ghost" id="ivExp" style="width:auto;padding:6px 14px">匯出 Invisible List CSV</button><button class="btn ghost" id="ivExpRaw" style="width:auto;padding:6px 14px">匯出原始資料 CSV (計算取消)</button><button class="btn sec" id="ivFetchStatus" style="width:auto;padding:6px 14px">查詢狀態</button><button class="btn" id="ivSetInvisible" style="width:auto;padding:6px 14px">設為Invisible (已選)</button><button class="btn ghost" id="ivCancelSched" style="width:auto;padding:6px 14px">取消排程 (已選)</button>
+          <button class="btn ghost" id="ivExp" style="width:auto;padding:6px 14px">匯出 Invisible List CSV</button><button class="btn ghost" id="ivExpRaw" style="width:auto;padding:6px 14px">匯出原始資料 CSV (計算取消)</button><label style="font-size:12px;color:var(--mut);display:inline-flex;align-items:center;gap:4px"><input type="checkbox" id="ivExpOnlyTable">只限表內 SKU</label><button class="btn sec" id="ivFetchStatus" style="width:auto;padding:6px 14px">查詢狀態</button><button class="btn" id="ivSetInvisible" style="width:auto;padding:6px 14px">設為Invisible (已選)</button><button class="btn ghost" id="ivCancelSched" style="width:auto;padding:6px 14px">取消排程 (已選)</button>
         </div>
         <div id="ivInfo" style="font-size:12px;color:var(--mut);margin-bottom:6px"></div>
         <div id="ivSelInfo" style="font-size:12px;color:var(--acc);margin-bottom:6px">已選 0 個 SKU</div>
@@ -723,32 +723,38 @@ if(_isXlsx){
   }
   function exportRawCsv(){
       if(!CSV_ROWS || !CSV_ROWS.length){ alert("\u5c1a\u672a\u8f09\u5165\u539f\u59cb\u8cc7\u6599"); return; }
+      var onlyTable=!!(q("ivExpOnlyTable") && q("ivExpOnlyTable").checked);
       var keys={}, nk=0;
       (CURRENT||[]).forEach(function(o){ var kk=String(o.sku_id)+"||"+String(o.wet_market); if(!keys[kk]){ keys[kk]=1; nk++; } });
-      if(!nk){ alert("\u73fe\u6642\u6c92\u6709\u7b26\u5408\u689d\u4ef6\u7684 SKU"); return; }
-      var cols=[]; var cseen={};
+      if(onlyTable && !nk){ alert("\u8868\u5185\u6c92\u6709 SKU\uff0c\u8acb\u5148\u653e\u5bec\u689d\u4ef6"); return; }
+      var mkSel=q("ivMarket"), mkVal=mkSel?String(mkSel.value||""):"";
+      var stSel=q("ivStore"), stVal=stSel?String(stSel.value||""):"";
+      var cols=[], cseen={};
       for(var ci=0;ci<CSV_ROWS.length && ci<50;ci++){ for(var ck in CSV_ROWS[ci]){ if(!cseen[ck]){ cseen[ck]=1; cols.push(ck); } } }
-      var out=[cols.slice()], nrow=0, qty=0;
+      var out=[["__raw_row"].concat(cols)], nrow=0, qty=0, pairs={}, npair=0;
       for(var i=0;i<CSV_ROWS.length;i++){
         var row=CSV_ROWS[i]; var sku=row["sku_id"], wm=row["Store_Name"];
         if(!sku||!wm) continue;
-        if(!keys[String(sku)+"||"+String(wm)]) continue;
+        if(onlyTable && !keys[String(sku)+"||"+String(wm)]) continue;
+        if(mkVal && String(wm)!==mkVal) continue;
         if(window.__EXCL_REASON && window.__EXCL_REASON(row["sku_cancel_reason"],row["sku_cs_refund_reason"],row["REFUND_REPORT_CANCEL_reason"])) continue;
         var _store=(row["Wet_Market"]||row["merchant_name"]||wm);
         if(window.only3P && window.only3P() && window.is1P && window.is1P(_store)) continue;
         if(window.__IV_SKU_ALLOWED && !window.__IV_SKU_ALLOWED(sku)) continue;
+        if(stVal && String(stVal).indexOf(String(_store))===-1) continue;
         var cr=String(row["sku_cancel_reason"]==null?"":row["sku_cancel_reason"]).trim();
         if(!cr || cr.toLowerCase()==="null") continue;
         if(window.__NO_CANCEL_COUNT && window.__NO_CANCEL_COUNT(row["sku_cancel_reason"],row["sku_cs_refund_reason"],row["REFUND_REPORT_CANCEL_reason"])) continue;
         var rq=num(row["refund_quantity"]); if(rq<=0) continue;
-        var line=[]; for(var cj=0;cj<cols.length;cj++){ line.push(row[cols[cj]]); }
+        var line=[i+2]; for(var cj=0;cj<cols.length;cj++){ line.push(row[cols[cj]]); }
         out.push(line); nrow++; qty+=rq;
+        var pk=String(sku)+"||"+String(wm); if(!pairs[pk]){ pairs[pk]=1; npair++; }
       }
       if(nrow===0){ alert("\u6c92\u6709\u53ef\u532f\u51fa\u7684\u53d6\u6d88\u8a18\u9304"); return; }
       var csv=out.map(function(r){ return r.map(function(v){ v=String(v==null?"":v); return /[",\n\r]/.test(v)?("\""+v.replace(/"/g,"\"\"")+"\""):v; }).join(","); }).join(String.fromCharCode(10));
       var blob=new Blob([String.fromCharCode(0xFEFF)+csv],{type:"text/csv;charset=utf-8;"});
       var a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="invisible_raw_cancel.csv"; document.body.appendChild(a); a.click(); a.remove();
-      var inf=q("ivInfo"); if(inf){ inf.textContent="\u5df2\u532f\u51fa "+nrow+" \u884c\u539f\u59cb\u53d6\u6d88\u8a18\u9304\uff08\u5171 "+qty+" \u4ef6\uff0c\u6db5\u84cb "+nk+" \u500b SKU \u00d7 \u8857\u5e02\uff09"; }
+      var inf=q("ivInfo"); if(inf){ inf.textContent="\u5df2\u532f\u51fa "+nrow+" \u884c\u539f\u59cb\u53d6\u6d88\u8a18\u9304\uff08\u5171 "+qty+" \u4ef6\uff0c"+npair+" \u500b SKU \u00d7 \u8857\u5e02\uff1b\u7bc4\u570d\uff1a"+(onlyTable?"\u8868\u5185 SKU":"\u5168\u90e8\u767d\u540d\u55ae SKU")+"\uff09"; }
     }
     function exportCsv(){
     var rows=[["Wet Market","Store","SKU ID","SKU Name","Sold","Cancel","Rate %"]];
