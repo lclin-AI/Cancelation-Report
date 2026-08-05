@@ -148,7 +148,7 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
 
       <div class="card">
         <h2>重點關注 SKU（車隊拆分）</h2>
-        <div class="muted">同上表相同條件，將出售量 / 取消量拆分為 Express 車隊 同 HKTVmall 車隊。</div>
+        <div class="muted">同上表相同條件，將出售量 / 取消量拆分為 Express 車隊 同 HKTVmall 車隊，每個車隊分別列出「含 OOS」同「不含 OOS」嘅取消/退款量同取消率（OOS ＝ OOS + EIGHT_HOUR_OOS）。</div>
         <div class="muted" id="ftCount" style="margin:8px 0"></div>
         <button class="btn ghost" id="expFocusTeam">匯出重點（車隊拆分）CSV</button>
         <div class="scroll" style="margin-top:8px"><table class="thin" id="focusTeamTable"></table></div>
@@ -309,7 +309,7 @@ function selectedReasons(){ return [...document.querySelectorAll("#selfBox input
 function filtered(){
   const plat=$("fPlatform").value, team=$("fTeam").value, from=$("fFrom").value, to=$("fTo").value;
   const rs=selectedReasons();
-  return ROWS.filter(r=>{ if(window.__EXCL_REASON&&window.__EXCL_REASON(r.cancel_type,r.cs_reason,r.rr_reason))return false; /* 1P stores are included on 主要分析 / Order 明細; the 3P-only toggle now applies to the Invisible List only */
+  return ROWS.filter(r=>{ /* 主要分析 / Order 明細 include ALL cancellation reasons: __EXCL_REASON row-drop and __NO_CANCEL_COUNT are applied to the Invisible List only. 1P stores are also included here. */
     if(plat&&r.platform!==plat) return false;
     if(team&&r.team!==team) return false;
     if(from&&r.date&&r.date<from) return false;
@@ -318,7 +318,7 @@ function filtered(){
   });
 }
 // a row counts as cancelled if its cancel_type is among the selected reasons OR refund>0
-function isCancelled(r,rs){ if(window.__NO_CANCEL_COUNT && window.__NO_CANCEL_COUNT(r.cancel_type,r.cs_reason,r.rr_reason)) return false; return (rs.length? rs.includes(r.cancel_type):true) && r.refund>0; }
+function isCancelled(r,rs){ /* all cancellation reasons count on 主要分析 / Order 明細 */ return (rs.length? rs.includes(r.cancel_type):true) && r.refund>0; }
 
 $("analyzeBtn").onclick=runAnalyze;
 function runAnalyze(){
@@ -329,13 +329,14 @@ function runAnalyze(){
   let totSold=0,totCancel=0;
   VIEW.forEach(r=>{
     const k=r.sku_id||r.sku_name;
-    if(!bySku[k]) bySku[k]={sku_id:r.sku_id,name:r.sku_name,sold:0,cancel:0,stores:{},eSold:0,eC:0,hSold:0,hC:0};
+    if(!bySku[k]) bySku[k]={sku_id:r.sku_id,name:r.sku_name,sold:0,cancel:0,stores:{},eSold:0,eC:0,hSold:0,hC:0,oC:0,eOC:0,hOC:0};
     bySku[k].sold+=r.sold; if(r.merchant) bySku[k].stores[r.merchant]=1; totSold+=r.sold;
     const c=isCancelled(r,rs)?r.refund:0;
     bySku[k].cancel+=c; totCancel+=c;
-    if((r.team||"").indexOf("Express")>=0){bySku[k].eSold+=r.sold;bySku[k].eC+=c;}else{bySku[k].hSold+=r.sold;bySku[k].hC+=c;}
+    const _oos=(r.cancel_type==="OOS"||r.cancel_type==="EIGHT_HOUR_OOS")?c:0; bySku[k].oC+=_oos;
+    if((r.team||"").indexOf("Express")>=0){bySku[k].eSold+=r.sold;bySku[k].eC+=c;bySku[k].eOC+=_oos;}else{bySku[k].hSold+=r.sold;bySku[k].hC+=c;bySku[k].hOC+=_oos;}
   });
-  const arr=Object.values(bySku).map(o=>({...o,store:Object.keys(o.stores||{}).join(", "),rate:o.sold?o.cancel/o.sold*100:0,eR:o.eSold?o.eC/o.eSold*100:0,hR:o.hSold?o.hC/o.hSold*100:0}));
+  const arr=Object.values(bySku).map(o=>({...o,store:Object.keys(o.stores||{}).join(", "),rate:o.sold?o.cancel/o.sold*100:0,eR:o.eSold?o.eC/o.eSold*100:0,hR:o.hSold?o.hC/o.hSold*100:0,oR:o.sold?o.oC/o.sold*100:0,nR:o.sold?(o.cancel-o.oC)/o.sold*100:0,eOR:o.eSold?o.eOC/o.eSold*100:0,eNR:o.eSold?(o.eC-o.eOC)/o.eSold*100:0,hOR:o.hSold?o.hOC/o.hSold*100:0,hNR:o.hSold?(o.hC-o.hOC)/o.hSold*100:0}));
   $("kSku").textContent=arr.length.toLocaleString("en-US");
   $("kSold").textContent=Math.round(totSold).toLocaleString();
   $("kCancel").textContent=Math.round(totCancel).toLocaleString();
@@ -363,8 +364,10 @@ function renderFocusTeam(arr){
   const v=parseFloat($("thVol").value)||0, rt=parseFloat($("thRate").value)||0;
   const f=arr.filter(o=>o.sold>v&&o.rate>rt).sort((a,b)=>b.rate-a.rate);
   $("ftCount").innerHTML='符合「出售量 &gt; '+v+' 且 取消率 &gt; '+rt+'%」嘅 SKU 共 <b>'+f.length+'</b> 個';
-  let h="<thead><tr><th rowspan=2>SKU ID</th><th rowspan=2>SKU 名稱</th><th rowspan=2>店舖</th><th colspan=3 style='text-align:center'>合計</th><th colspan=3 style='text-align:center'>Express 車隊</th><th colspan=3 style='text-align:center'>HKTVmall 車隊</th></tr><tr><th>出售量</th><th>取消/退款量</th><th>取消率</th><th>出售量</th><th>取消/退款量</th><th>取消率</th><th>出售量</th><th>取消/退款量</th><th>取消率</th></tr></thead><tbody>";
-  f.forEach(o=>{h+="<tr><td>"+o.sku_id+"</td><td>"+o.name+"</td><td>"+(o.store||"")+"</td><td>"+fmtN(o.sold)+"</td><td>"+fmtN(o.cancel)+"</td><td class='"+rateCls(o.rate)+"'>"+fmtRate(o.rate)+"</td><td>"+fmtN(o.eSold)+"</td><td>"+fmtN(o.eC)+"</td><td class='"+rateCls(o.eR)+"'>"+(o.eSold?fmtRate(o.eR):"-")+"</td><td>"+fmtN(o.hSold)+"</td><td>"+fmtN(o.hC)+"</td><td class='"+rateCls(o.hR)+"'>"+(o.hSold?fmtRate(o.hR):"-")+"</td></tr>";});
+  const _sub="<th>出售量</th><th>取消/退款量<br>（含 OOS）</th><th>取消率<br>（含 OOS）</th><th>取消/退款量<br>（不含 OOS）</th><th>取消率<br>（不含 OOS）</th>";
+  let h="<thead><tr><th rowspan=2>SKU ID</th><th rowspan=2>SKU 名稱</th><th rowspan=2>店舖</th><th colspan=5 style='text-align:center'>合計</th><th colspan=5 style='text-align:center'>Express 車隊</th><th colspan=5 style='text-align:center'>HKTVmall 車隊</th></tr><tr>"+_sub+_sub+_sub+"</tr></thead><tbody>";
+  const _blk=(sold,cn,rr,cx,rx)=>"<td>"+fmtN(sold)+"</td><td>"+fmtN(cn)+"</td><td class='"+rateCls(rr)+"'>"+(sold?fmtRate(rr):"-")+"</td><td>"+fmtN(cx)+"</td><td class='"+rateCls(rx)+"'>"+(sold?fmtRate(rx):"-")+"</td>";
+  f.forEach(o=>{h+="<tr><td>"+o.sku_id+"</td><td>"+o.name+"</td><td>"+(o.store||"")+"</td>"+_blk(o.sold,o.cancel,o.rate,o.cancel-o.oC,o.nR)+_blk(o.eSold,o.eC,o.eR,o.eC-o.eOC,o.eNR)+_blk(o.hSold,o.hC,o.hR,o.hC-o.hOC,o.hNR)+"</tr>";});
   $("focusTeamTable").innerHTML=h+"</tbody>";
   window.__focusTeam=f;
 }
@@ -413,7 +416,7 @@ $("loadDetail").onclick=()=>{
 // ---- CSV export helpers ----
 function dl(name,rows){const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(",")).join("\n");const b=new Blob([csv],{type:"text/csv"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=name;a.click();}
 $("expFocus").onclick=()=>dl("focus.csv",[["SKU ID","SKU 名稱","出售量","取消量","取消率%"],...(window.__focus||[]).map(o=>[o.sku_id,o.name,o.sold,o.cancel,o.rate.toFixed(2)])]);
-$("expFocusTeam").onclick=()=>dl("focus_by_team.csv",[["SKU ID","SKU 名稱","店舖","出售量","取消量","取消率%","Express 出售量","Express 取消量","Express 取消率%","HKTVmall 出售量","HKTVmall 取消量","HKTVmall 取消率%"],...(window.__focusTeam||[]).map(o=>[o.sku_id,o.name,o.store||"",o.sold,o.cancel,o.rate.toFixed(2),o.eSold,o.eC,o.eR.toFixed(2),o.hSold,o.hC,o.hR.toFixed(2)])]);
+$("expFocusTeam").onclick=()=>dl("focus_by_team.csv",[["SKU ID","SKU 名稱","店舖","出售量","取消量(含OOS)","取消率%(含OOS)","取消量(不含OOS)","取消率%(不含OOS)","Express 出售量","Express 取消量(含OOS)","Express 取消率%(含OOS)","Express 取消量(不含OOS)","Express 取消率%(不含OOS)","HKTVmall 出售量","HKTVmall 取消量(含OOS)","HKTVmall 取消率%(含OOS)","HKTVmall 取消量(不含OOS)","HKTVmall 取消率%(不含OOS)"],...(window.__focusTeam||[]).map(o=>[o.sku_id,o.name,o.store||"",o.sold,o.cancel,o.rate.toFixed(2),o.cancel-o.oC,o.nR.toFixed(2),o.eSold,o.eC,o.eR.toFixed(2),o.eC-o.eOC,o.eNR.toFixed(2),o.hSold,o.hC,o.hR.toFixed(2),o.hC-o.hOC,o.hNR.toFixed(2)])]);
 $("expCat").onclick=()=>dl("category.csv",[["主類別","子類別","出售量","取消量","取消率%"],...(window.__cat||[]).map(o=>[o.main,o.sub,o.sold,o.cancel,o.rate.toFixed(2)])]);
 $("expTeam").onclick=()=>dl("team.csv",[["主類別","子類別","E出售","E取消","E率%","H出售","H取消","H率%"],...(window.__team||[]).map(o=>[o.main,o.sub,o.eSold,o.eC,o.eR.toFixed(2),o.hSold,o.hC,o.hR.toFixed(2)])]);
 $("expDetail").onclick=()=>dl("detail.csv",[["訂單編號","SKU 名稱","SKU ID","退款件數","原因","平台","車隊","車隊代碼","送貨日期"],...(window.__detail||[]).map(r=>[r.order,r.sku_name,r.sku_id,r.refund,r.cancel_type,r.platform,r.team,r.carline,r.date])]);
