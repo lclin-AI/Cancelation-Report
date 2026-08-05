@@ -179,7 +179,7 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
           <div><label>街市 Wet Market</label><select id="ivMarket" style="width:180px"><option value="">全部街市</option></select></div><div><label>店舖 Store</label><select id="ivStore" style="width:200px"><option value="">全部店舖</option></select></div><div><label>排序 Sort</label><select id="ivSortMode" style="width:190px"><option value="rate">取消率</option><option value="market">街市 → 取消率</option></select></div>
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--mut)"><input type="checkbox" id="ivGroupStore">按街市 / 店舖分組</label>
           <button class="btn sec" id="ivApply" style="width:auto;padding:6px 14px">套用</button>
-          <button class="btn ghost" id="ivExp" style="width:auto;padding:6px 14px">匯出 Invisible List CSV</button><button class="btn ghost" id="ivExpRaw" style="width:auto;padding:6px 14px">匯出原始資料 CSV (計算取消)</button><label style="font-size:12px;color:var(--mut);display:inline-flex;align-items:center;gap:4px"><input type="checkbox" id="ivExpOnlyTable">只限表內 SKU</label><button class="btn sec" id="ivFetchStatus" style="width:auto;padding:6px 14px">查詢狀態</button><button class="btn" id="ivSetInvisible" style="width:auto;padding:6px 14px">設為Invisible (已選)</button><button class="btn ghost" id="ivCancelSched" style="width:auto;padding:6px 14px">取消排程 (已選)</button>
+          <button class="btn ghost" id="ivExp" style="width:auto;padding:6px 14px">匯出 Invisible List CSV（匯總表）</button><button class="btn ghost" id="ivExpRaw" style="width:auto;padding:6px 14px">匯出取消 Order Entry 原始資料 CSV</button><label style="font-size:12px;color:var(--mut);display:inline-flex;align-items:center;gap:4px"><input type="checkbox" id="ivExpOnlyTable" checked>只限表內 SKU</label><button class="btn sec" id="ivFetchStatus" style="width:auto;padding:6px 14px">查詢狀態</button><button class="btn" id="ivSetInvisible" style="width:auto;padding:6px 14px">設為Invisible (已選)</button><button class="btn ghost" id="ivCancelSched" style="width:auto;padding:6px 14px">取消排程 (已選)</button>
         </div>
         <div id="ivInfo" style="font-size:12px;color:var(--mut);margin-bottom:6px"></div>
         <div id="ivSelInfo" style="font-size:12px;color:var(--acc);margin-bottom:6px">已選 0 個 SKU</div>
@@ -432,7 +432,7 @@ window.runAnalyze=function(){_ra();window.__lastArr=Object.values({});};
       say('載入最新檔案：'+latest.name+' …');
       var _n=(latest.name||'').toLowerCase();
 var _isXlsx = _n.endsWith('.xlsx') || (latest.mimeType||'').indexOf('spreadsheetml')>=0;
-      var _isGS=(latest.mimeType||'').indexOf('google-apps.spreadsheet')!==-1;function _colName(cn){var cs='';while(cn){var cm=(cn-1)%26;cs=String.fromCharCode(65+cm)+cs;cn=Math.floor((cn-1)/26);}return cs;}async function _loadSheet(sid){var base='https://sheets.googleapis.com/v4/spreadsheets/'+sid;var mj=await (await fetch(base+'?fields='+encodeURIComponent('sheets.properties(title,gridProperties)')+'&key='+DRIVE_API_KEY)).json();var pr=((mj.sheets||[])[0]||{}).properties||{};var stitle=pr.title||'Sheet1';var gp=pr.gridProperties||{};var rc=gp.rowCount||1000;var lc=_colName(gp.columnCount||26);var hdr=null,acc=[],start=1,step=20000;for(;;){var end=Math.min(rc,start+step-1);var rg=stitle+'!A'+start+':'+lc+end;var vj=await (await fetch(base+'/values/'+encodeURIComponent(rg)+'?key='+DRIVE_API_KEY)).json();var vals=vj.values||[];if(!vals.length)break;if(!hdr){hdr=vals.shift();}vals.forEach(function(v){var o={};hdr.forEach(function(h,ci){o[h]=(v[ci]===undefined||v[ci]===null)?'':v[ci];});acc.push(o);});say('\u8f09\u5165\u4e2d\u2026 '+acc.length+' \u5217');if(end===rc)break;start=end+1;}return acc;}if(_isGS){_finish(await _loadSheet(latest.id));return;}
+      var _isGS=(latest.mimeType||'').indexOf('google-apps.spreadsheet')!==-1;function _colName(cn){var cs='';while(cn){var cm=(cn-1)%26;cs=String.fromCharCode(65+cm)+cs;cn=Math.floor((cn-1)/26);}return cs;}async function _loadSheet(sid){var base='https://sheets.googleapis.com/v4/spreadsheets/'+sid;var mj=await (await fetch(base+'?fields='+encodeURIComponent('sheets.properties(title,gridProperties)')+'&key='+DRIVE_API_KEY)).json();var pr=((mj.sheets||[])[0]||{}).properties||{};var stitle=pr.title||'Sheet1';var gp=pr.gridProperties||{};var rc=gp.rowCount||1000;var lc=_colName(gp.columnCount||26);var hj=await (await fetch(base+'/values/'+encodeURIComponent(stitle+'!A1:'+lc+'1')+'?key='+DRIVE_API_KEY)).json();var hdr=((hj.values||[])[0]||[]);if(!hdr.length)return [];var step=20000,ranges=[];for(var st=2;st<=rc;st+=step){ranges.push([st,Math.min(rc,st+step-1)]);}var parts=new Array(ranges.length),nx=0,dn=0,CONC=6;async function _w(){for(;;){var k=nx++;if(k>=ranges.length)return;var rg=stitle+'!A'+ranges[k][0]+':'+lc+ranges[k][1];var vj=await (await fetch(base+'/values/'+encodeURIComponent(rg)+'?key='+DRIVE_API_KEY)).json();parts[k]=vj.values||[];dn++;say('\u8f09\u5165\u4e2d\u2026 '+dn+'/'+ranges.length+' \u6bb5');}}var ws=[];for(var w=0;w<Math.min(CONC,ranges.length);w++){ws.push(_w());}await Promise.all(ws);var acc=[];for(var p=0;p<parts.length;p++){var vals=parts[p]||[];for(var vi=0;vi<vals.length;vi++){var v=vals[vi],o={};for(var ci=0;ci<hdr.length;ci++){var x=v[ci];o[hdr[ci]]=(x===undefined||x===null)?'':x;}acc.push(o);}}say('\u8f09\u5165\u4e2d\u2026 '+acc.length+' \u5217');return acc;}if(_isGS){_finish(await _loadSheet(latest.id));return;}
 var dlUrl='https://www.googleapis.com/drive/v3/files/'+latest.id+'?alt=media&key='+DRIVE_API_KEY;
 var dr=await fetch(dlUrl);
 if(!dr.ok) throw new Error('download HTTP '+dr.status);
@@ -443,7 +443,7 @@ function _finish(rows){
     }
   }); }catch(_e){}
   try{ ingest(rows); if(typeof window.__setInvisibleRows==='function') window.__setInvisibleRows(rows); if(typeof runAnalyze==='function') runAnalyze();
-    say('已載入最新檔案：'+latest.name+'（'+rows.length+' 列，'+(latest.modifiedTime||'')+'）');
+    say('已載入最新檔案：'+latest.name+'（'+rows.length+' 列，'+(latest.modifiedTime||'')+'）'); try{ var _ss=document.getElementById('srcStatus'); if(_ss) _ss.textContent='\u5df2\u8f09\u5165 '+rows.length+' \u884c'; }catch(_e){}
   }catch(e){ say('處理失敗：'+e.message); }
 }
 if(_isXlsx){
@@ -715,20 +715,21 @@ if(_isXlsx){
           html+="<tr class=\"ivGrpRow\" style=\"background:var(--panel2)\"><td style=\"text-align:center\"><input type=\"checkbox\" class=\"ivGrpChk\" data-skus=\""+esc(gm2.skus.join(","))+"\"></td><td colspan=\"20\" style=\"font-weight:600;color:var(--acc);padding:6px 4px 6px 24px\">\u21b3 "+esc(gm2.store_name||"(\u672a\u77e5\u5e97\u8216)")+" <span style=\"color:var(--mut);font-weight:400\">\u00b7 "+gm2.n+" SKU \u00b7 \u51fa\u552e "+gm2.sold+" \u00b7 \u53d6\u6d88 "+gm2.cancel+" \u00b7 \u53d6\u6d88\u7387 "+gm2.rate.toFixed(2)+"%</span></td></tr>";
         }
       }
-      html+="<tr><td style=\"text-align:center\"><input type=\"checkbox\" class=\"ivChk\" data-sku=\""+esc(o.sku_id)+"\"></td><td>"+esc(o.wet_market)+"\x3c/td\x3e\x3ctd\x3e"+esc(o.store_name||"")+"</td><td>"+esc(o.sku_id)+"</td><td>"+esc(o.sku_name)+"</td><td style=\"text-align:right\">"+o.sold+"</td><td style=\"text-align:right\">"+o.cancel+"</td><td style=\"text-align:right;"+(o.rate>=5?"color:var(--red);font-weight:600":(o.rate>=2?"color:var(--acc);font-weight:600":""))+"\">"+o.rate.toFixed(2)+"</td><td class=\"ivStatus\" data-sku=\""+esc(o.sku_id)+"\" style=\"text-align:center;color:var(--mut)\">-</td></tr>";
+      html+="<tr><td style=\"text-align:center\"><input type=\"checkbox\" class=\"ivChk\" data-sku=\""+esc(o.sku_id)+"\"></td><td>"+esc(o.wet_market)+"\x3c/td\x3e\x3ctd\x3e"+esc(o.store_name||"")+"</td><td>"+esc(o.sku_id)+"</td><td>"+esc(o.sku_name)+"</td><td style=\"text-align:right\">"+o.sold+"</td><td style=\"text-align:right\">"+o.cancel+" <button type=\"button\" class=\"ivRawOne\" data-sku=\""+esc(o.sku_id)+"\" data-wm=\""+esc(o.wet_market||"")+"\" title=\"\u532f\u51fa\u6b64 SKU \u00d7 \u8857\u5e02\u7684\u53d6\u6d88 order entry\" style=\"background:transparent;border:1px solid var(--line);color:var(--mut);border-radius:4px;font-size:10px;line-height:14px;padding:0 5px;cursor:pointer;margin-left:6px\">\u539f\u59cb</button></td><td style=\"text-align:right;"+(o.rate>=5?"color:var(--red);font-weight:600":(o.rate>=2?"color:var(--acc);font-weight:600":""))+"\">"+o.rate.toFixed(2)+"</td><td class=\"ivStatus\" data-sku=\""+esc(o.sku_id)+"\" style=\"text-align:center;color:var(--mut)\">-</td></tr>";
     }
     body.innerHTML=html||("<tr><td colspan=\"10\" style=\"color:var(--mut);padding:10px\">no items (rate > "+rateTh+"% and sold > "+soldTh+")</td></tr>");
     var info=q("ivInfo"); if(info){ info.textContent="Matched: "+list.length+" items (rate > "+rateTh+"%, sold > "+soldTh+")"+(mkVal?(" \u00b7 \u8857\u5e02: "+mkVal):"")+(stVal?(" \u00b7 \u5e97\u8216: "+stVal):""); }
     if(window.__ivUpdateSelCount) window.__ivUpdateSelCount();
   }
-  function exportRawCsv(){
+  function exportRawCsv(opts){
+      var ONE=(opts&&opts.sku)?{sku:String(opts.sku),wm:String(opts.wm==null?"":opts.wm)}:null;
       if(!CSV_ROWS || !CSV_ROWS.length){ alert("\u5c1a\u672a\u8f09\u5165\u539f\u59cb\u8cc7\u6599"); return; }
-      var onlyTable=!!(q("ivExpOnlyTable") && q("ivExpOnlyTable").checked);
+      var onlyTable=!!(q("ivExpOnlyTable") && q("ivExpOnlyTable").checked); if(ONE) onlyTable=false;
       var keys={}, nk=0;
       (CURRENT||[]).forEach(function(o){ var kk=String(o.sku_id)+"||"+String(o.wet_market); if(!keys[kk]){ keys[kk]=1; nk++; } });
       if(onlyTable && !nk){ alert("\u8868\u5185\u6c92\u6709 SKU\uff0c\u8acb\u5148\u653e\u5bec\u689d\u4ef6"); return; }
       var mkSel=q("ivMarket"), mkVal=mkSel?String(mkSel.value||""):"";
-      var stSel=q("ivStore"), stVal=stSel?String(stSel.value||""):"";
+      var stSel=q("ivStore"), stVal=stSel?String(stSel.value||""):""; if(ONE){ mkVal=""; stVal=""; }
       var cols=[], cseen={};
       for(var ci=0;ci<CSV_ROWS.length && ci<50;ci++){ for(var ck in CSV_ROWS[ci]){ if(!cseen[ck]){ cseen[ck]=1; cols.push(ck); } } }
       var out=[["__raw_row"].concat(cols)], nrow=0, qty=0, pairs={}, npair=0;
@@ -736,6 +737,7 @@ if(_isXlsx){
         var row=CSV_ROWS[i]; var sku=row["sku_id"], wm=row["Store_Name"];
         if(!sku||!wm) continue;
         if(onlyTable && !keys[String(sku)+"||"+String(wm)]) continue;
+        if(ONE && (String(sku)!==ONE.sku || String(wm)!==ONE.wm)) continue;
         if(mkVal && String(wm)!==mkVal) continue;
         if(window.__EXCL_REASON && window.__EXCL_REASON(row["sku_cancel_reason"],row["sku_cs_refund_reason"],row["REFUND_REPORT_CANCEL_reason"])) continue;
         var _store=(row["Wet_Market"]||row["merchant_name"]||wm);
@@ -746,14 +748,14 @@ if(_isXlsx){
         if(!cr || cr.toLowerCase()==="null") continue;
         if(window.__NO_CANCEL_COUNT && window.__NO_CANCEL_COUNT(row["sku_cancel_reason"],row["sku_cs_refund_reason"],row["REFUND_REPORT_CANCEL_reason"])) continue;
         var rq=num(row["refund_quantity"]); if(rq<=0) continue;
-        var line=[i+2]; for(var cj=0;cj<cols.length;cj++){ line.push(row[cols[cj]]); }
+        var line=[i+2]; for(var cj=0;cj<cols.length;cj++){ var _cn=cols[cj], _cv=row[_cn]; if(_cn==="order_entry_id" && /[eE]\+/.test(String(_cv))){ var _ea=String(row["order_entry_id_A"]==null?"":row["order_entry_id_A"]).trim(), _eb=String(row["order_entry_id_B"]==null?"":row["order_entry_id_B"]).trim(); if(_ea && _eb) _cv=_ea+_eb; } line.push(_cv); }
         out.push(line); nrow++; qty+=rq;
         var pk=String(sku)+"||"+String(wm); if(!pairs[pk]){ pairs[pk]=1; npair++; }
       }
       if(nrow===0){ alert("\u6c92\u6709\u53ef\u532f\u51fa\u7684\u53d6\u6d88\u8a18\u9304"); return; }
       var csv=out.map(function(r){ return r.map(function(v){ v=String(v==null?"":v); return /[",\n\r]/.test(v)?("\""+v.replace(/"/g,"\"\"")+"\""):v; }).join(","); }).join(String.fromCharCode(10));
       var blob=new Blob([String.fromCharCode(0xFEFF)+csv],{type:"text/csv;charset=utf-8;"});
-      var a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="invisible_raw_cancel.csv"; document.body.appendChild(a); a.click(); a.remove();
+      var a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=(ONE?("invisible_raw_"+String(ONE.sku).replace(/[^A-Za-z0-9._-]/g,"_")+".csv"):"invisible_raw_cancel.csv"); document.body.appendChild(a); a.click(); a.remove();
       var inf=q("ivInfo"); if(inf){ inf.textContent="\u5df2\u532f\u51fa "+nrow+" \u884c\u539f\u59cb\u53d6\u6d88\u8a18\u9304\uff08\u5171 "+qty+" \u4ef6\uff0c"+npair+" \u500b SKU \u00d7 \u8857\u5e02\uff1b\u7bc4\u570d\uff1a"+(onlyTable?"\u8868\u5185 SKU":"\u5168\u90e8\u767d\u540d\u55ae SKU")+"\uff09"; }
     }
     function exportCsv(){
@@ -774,7 +776,8 @@ if(_isXlsx){
     invTab.addEventListener("click", switchToInvisible);
     document.querySelectorAll(".tab").forEach(function(el){ if(el.dataset.tab!=="invisible"){ el.addEventListener("click", function(){ var p=q("tab-invisible"); if(p) p.style.display="none"; }); } });
     var ap=q("ivApply"); if(ap) ap.addEventListener("click", render);
-    var ex=q("ivExp"); if(ex) ex.addEventListener("click", exportCsv); var exr=q("ivExpRaw"); if(exr) exr.addEventListener("click", exportRawCsv);
+    var ex=q("ivExp"); if(ex) ex.addEventListener("click", exportCsv); var exr=q("ivExpRaw"); if(exr) exr.addEventListener("click", function(){ exportRawCsv(); });
+      var _ivb=q("ivBody"); if(_ivb){ _ivb.addEventListener("click", function(ev){ var t=ev.target; if(t && t.className && String(t.className).indexOf("ivRawOne")>=0){ ev.preventDefault(); ev.stopPropagation(); exportRawCsv({sku:t.getAttribute("data-sku"), wm:t.getAttribute("data-wm")}); } }); }
       var gsb=q("ivGroupStore"); if(gsb){ gsb.addEventListener("change", function(){ render(); }); }
       var stb=q("ivStore"); if(stb){ stb.addEventListener("change", function(){ render(); }); }
       var mkb=q("ivMarket"); if(mkb){ mkb.addEventListener("change", function(){ render(); }); }
