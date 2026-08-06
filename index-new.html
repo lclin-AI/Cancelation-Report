@@ -431,7 +431,7 @@ window.runAnalyze=function(){_ra();window.__lastArr=Object.values({});};
     <script>
 /* Drive folder auto-load (latest file) — added feature */
 (function(){
-  var DRIVE_FOLDER_ID = "1cOroZVLlRu7Um9eOECKRMTzrvH9xsjAF";
+  var DRIVE_FOLDER_ID = "1FrDUecrQv4AR-bgiGGlOi4xjnXlfI8Zd";
   var DRIVE_API_KEY = "AIzaSyD1jQcj2R5Rid5Pde1tFEFkfnHjI251YpM";
   function q(id){ return document.getElementById(id); }
   async function loadFromDriveFolder(){
@@ -866,7 +866,7 @@ if(_isXlsx){
     window.loadFromDriveFolder=async function(){
       var res=await orig.apply(this,arguments);
       try{
-        var id="1cOroZVLlRu7Um9eOECKRMTzrvH9xsjAF", key="AIzaSyD1jQcj2R5Rid5Pde1tFEFkfnHjI251YpM";
+        var id="1FrDUecrQv4AR-bgiGGlOi4xjnXlfI8Zd", key="AIzaSyD1jQcj2R5Rid5Pde1tFEFkfnHjI251YpM";
         var listUrl="https://www.googleapis.com/drive/v3/files?q="+encodeURIComponent("\x27"+id+"\x27 in parents and trashed=false")+"&orderBy=modifiedTime desc&pageSize=20&fields="+encodeURIComponent("files(id,name,mimeType)")+"&key="+key;
         var lj=await (await fetch(listUrl)).json();
         var files=(lj.files||[]).filter(function(f){ return /\.csv$/i.test(f.name)||f.mimeType==="text/csv"; });
