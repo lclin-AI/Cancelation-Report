@@ -15,7 +15,7 @@
 body{margin:0;font-family:system-ui,"Microsoft JhengHei",sans-serif;background:var(--bg);color:var(--txt);font-size:13px}
 .layout{display:flex;min-height:100vh}
 .side{width:340px;flex:0 0 340px;background:var(--panel);border-right:1px solid var(--line);padding:16px;overflow-y:auto;height:100vh;position:sticky;top:0}
-.main{flex:1;padding:16px 22px;overflow-x:auto}
+.main{flex:1;padding:16px 22px;overflow-x:auto} .ddbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:linear-gradient(90deg,rgba(63,185,80,.20),rgba(63,185,80,.04));border:1px solid var(--grn);border-left:5px solid var(--grn);border-radius:8px;padding:10px 14px;margin:0 0 14px} .ddbar .dd-lab{font-size:11px;letter-spacing:1px;color:var(--grn);background:rgba(63,185,80,.16);border-radius:4px;padding:3px 9px;white-space:nowrap} .ddbar .dd-val{font-size:20px;font-weight:700;color:var(--txt);white-space:nowrap} .ddbar .dd-meta{font-size:11px;color:var(--mut);margin-left:auto;text-align:right}
 h1{font-size:18px;margin:0 0 2px}
 .sub{color:var(--mut);font-size:12px;margin-bottom:14px}
 h2{font-size:14px;color:var(--acc);margin:18px 0 8px;border-bottom:1px solid var(--line);padding-bottom:4px}
@@ -118,7 +118,7 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
     <button class="btn" id="analyzeBtn" style="margin-top:14px">分析</button>
   </aside>
 
-  <main class="main">
+  <main class="main"><div id="dataDateBar" class="ddbar" style="display:none"><span class="dd-lab">資料日期</span><span class="dd-val" id="ddDate">—</span><span class="dd-meta" id="ddMeta"></span></div><script>window.__setDataDate=function(name,mt){try{var bar=document.getElementById('dataDateBar');if(!bar)return;var mm=String(name||'').match(/_(\d{4})(?![0-9])/g);var mmdd=mm?mm[mm.length-1].slice(1):null;var y=mt?new Date(mt).getFullYear():new Date().getFullYear();var txt='';if(mmdd){var mo=parseInt(mmdd.slice(0,2),10),da=parseInt(mmdd.slice(2),10);if(mo>=1&&mo<=12&&da>=1&&da<=31){var d=new Date(y,mo-1,da);var w=['日','一','二','三','四','五','六'][d.getDay()];txt=y+'年'+mo+'月'+da+'日（星期'+w+'）';}}if(!txt&&mt){var d2=new Date(mt);txt=d2.getFullYear()+'年'+(d2.getMonth()+1)+'月'+d2.getDate()+'日';}var de=document.getElementById('ddDate');if(de)de.textContent=txt||'未知';var meta='檔案：'+(name||'-');if(mt){meta+='　｜　Drive 更新：'+new Date(mt).toLocaleString('zh-HK',{hour12:false});}var me=document.getElementById('ddMeta');if(me)me.textContent=meta;bar.style.display='flex';}catch(e){}};window.__clearDataDate=function(){try{var b=document.getElementById('dataDateBar');if(b)b.style.display='none';}catch(e){}};document.addEventListener('DOMContentLoaded',function(){try{var lb=document.getElementById('loadBtn');var sm=document.getElementById('srcMode');if(lb)lb.addEventListener('click',function(){if(!sm||sm.value!=='drive')window.__clearDataDate();});}catch(e){}});</script>
     <div class="tabs">
       <div class="tab on" data-tab="main">主要分析</div>
       <div class="tab" data-tab="detail">Order 明細</div>
@@ -465,7 +465,7 @@ function _finish(rows){
     }
   }); }catch(_e){}
   try{ ingest(rows); if(typeof window.__setInvisibleRows==='function') window.__setInvisibleRows(rows); if(typeof runAnalyze==='function') runAnalyze();
-    say('已載入最新檔案：'+latest.name+'（'+rows.length+' 列，'+(latest.modifiedTime||'')+'）'); try{ var _ss=document.getElementById('srcStatus'); if(_ss) _ss.textContent='\u5df2\u8f09\u5165 '+rows.length+' \u884c'; }catch(_e){}
+    say('已載入最新檔案：'+latest.name+'（'+rows.length+' 列，'+(latest.modifiedTime||'')+'）'); try{ window.__setDataDate && window.__setDataDate(latest.name, latest.modifiedTime); }catch(_e){} try{ var _ss=document.getElementById('srcStatus'); if(_ss) _ss.textContent='\u5df2\u8f09\u5165 '+rows.length+' \u884c'; }catch(_e){}
   }catch(e){ say('處理失敗：'+e.message); }
 }
 if(_isXlsx){
