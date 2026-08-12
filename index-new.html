@@ -148,10 +148,13 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
 
       <div class="card">
         <h2>重點關注 SKU（車隊拆分）</h2>
-        <div class="muted">同上表相同條件，將出售量 / 取消量拆分為 Express 車隊 同 HKTVmall 車隊，每個車隊分別列出「含 OOS」同「不含 OOS」嘅取消/退款量同取消率（OOS ＝ OOS + EIGHT_HOUR_OOS）。</div>
+        <div class="muted">同上表相同條件，將出售量 / 取消量拆分為 Express 車隊 同 HKTVmall 車隊，分「含 OOS」同「不含 OOS」兩個表列出取消/退款量同取消率（OOS ＝ OOS + EIGHT_HOUR_OOS）。</div>
         <div class="muted" id="ftCount" style="margin:8px 0"></div>
         <button class="btn ghost" id="expFocusTeam">匯出重點（車隊拆分）CSV</button>
-        <div class="scroll" style="margin-top:8px"><table class="thin" id="focusTeamTable"></table></div>
+        <div class="ft-cap ft-cap-in">含 OOS</div>
+        <div class="scroll" style="margin-top:0"><table class="thin" id="focusTeamTable"></table></div>
+        <div class="ft-cap ft-cap-ex">不含 OOS</div>
+        <div class="scroll" style="margin-top:0"><table class="thin" id="focusTeamTableEx"></table></div>
       </div>
 
       <div class="card">
@@ -364,11 +367,17 @@ function renderFocusTeam(arr){
   const v=parseFloat($("thVol").value)||0, rt=parseFloat($("thRate").value)||0;
   const f=arr.filter(o=>o.sold>v&&o.rate>rt).sort((a,b)=>b.rate-a.rate);
   $("ftCount").innerHTML='符合「出售量 &gt; '+v+' 且 取消率 &gt; '+rt+'%」嘅 SKU 共 <b>'+f.length+'</b> 個';
-  const _sub="<th>出售量</th><th>取消/退款量<br>（含 OOS）</th><th>取消率<br>（含 OOS）</th><th>取消/退款量<br>（不含 OOS）</th><th>取消率<br>（不含 OOS）</th>";
-  let h="<thead><tr><th rowspan=2>SKU ID</th><th rowspan=2>SKU 名稱</th><th rowspan=2>店舖</th><th colspan=5 style='text-align:center'>合計</th><th colspan=5 style='text-align:center'>Express 車隊</th><th colspan=5 style='text-align:center'>HKTVmall 車隊</th></tr><tr>"+_sub+_sub+_sub+"</tr></thead><tbody>";
-  const _blk=(sold,cn,rr,cx,rx)=>"<td>"+fmtN(sold)+"</td><td>"+fmtN(cn)+"</td><td class='"+rateCls(rr)+"'>"+(sold?fmtRate(rr):"-")+"</td><td>"+fmtN(cx)+"</td><td class='"+rateCls(rx)+"'>"+(sold?fmtRate(rx):"-")+"</td>";
-  f.forEach(o=>{h+="<tr><td>"+o.sku_id+"</td><td>"+o.name+"</td><td>"+(o.store||"")+"</td>"+_blk(o.sold,o.cancel,o.rate,o.cancel-o.oC,o.nR)+_blk(o.eSold,o.eC,o.eR,o.eC-o.eOC,o.eNR)+_blk(o.hSold,o.hC,o.hR,o.hC-o.hOC,o.hNR)+"</tr>";});
-  $("focusTeamTable").innerHTML=h+"</tbody>";
+  const _sub="<th>出售量</th><th>取消/退款量</th><th>取消率</th>";
+  const _head="<thead><tr><th rowspan=2>SKU ID</th><th rowspan=2>SKU 名稱</th><th rowspan=2>店舖</th><th colspan=3 style='text-align:center'>合計</th><th colspan=3 style='text-align:center'>Express 車隊</th><th colspan=3 style='text-align:center'>HKTVmall 車隊</th></tr><tr>"+_sub+_sub+_sub+"</tr></thead><tbody>";
+  const _blk=(sold,cn,rr)=>"<td>"+fmtN(sold)+"</td><td>"+fmtN(cn)+"</td><td class='"+rateCls(rr)+"'>"+(sold?fmtRate(rr):"-")+"</td>";
+  const _row=o=>"<tr><td>"+o.sku_id+"</td><td>"+o.name+"</td><td>"+(o.store||"")+"</td>";
+  let hIn=_head, hEx=_head;
+  f.forEach(o=>{
+    hIn+=_row(o)+_blk(o.sold,o.cancel,o.rate)+_blk(o.eSold,o.eC,o.eR)+_blk(o.hSold,o.hC,o.hR)+"</tr>";
+    hEx+=_row(o)+_blk(o.sold,o.cancel-o.oC,o.nR)+_blk(o.eSold,o.eC-o.eOC,o.eNR)+_blk(o.hSold,o.hC-o.hOC,o.hNR)+"</tr>";
+  });
+  $("focusTeamTable").innerHTML=hIn+"</tbody>";
+  const _exT=$("focusTeamTableEx"); if(_exT) _exT.innerHTML=hEx+"</tbody>";
   window.__focusTeam=f;
 }
 $("applyTh").onclick=()=>{ if(window.__lastArr){ renderFocus(window.__lastArr); renderFocusTeam(window.__lastArr); renderChart(window.__lastArr); }; };
@@ -1194,23 +1203,26 @@ if(_isXlsx){
 })();
 </script>
   <style>
-    /* 重點關注 SKU（車隊拆分）: 車隊配色 + OOS 區分 */
-    #focusTeamTable thead tr:first-child th:nth-child(4){background:#334155;color:#fff;border-left:2px solid #94a3b8}
-    #focusTeamTable thead tr:first-child th:nth-child(5){background:#0369a1;color:#fff;border-left:2px solid #94a3b8}
-    #focusTeamTable thead tr:first-child th:nth-child(6){background:#b45309;color:#fff;border-left:2px solid #94a3b8}
-    #focusTeamTable thead tr:nth-child(2) th:nth-child(-n+5){background:rgba(148,163,184,.20)}
-    #focusTeamTable thead tr:nth-child(2) th:nth-child(n+6):nth-child(-n+10){background:rgba(3,105,161,.30)}
-    #focusTeamTable thead tr:nth-child(2) th:nth-child(n+11){background:rgba(180,83,9,.30)}
-    #focusTeamTable thead tr:nth-child(2) th:nth-child(1),#focusTeamTable thead tr:nth-child(2) th:nth-child(6),#focusTeamTable thead tr:nth-child(2) th:nth-child(11){border-left:2px solid #94a3b8}
-    #focusTeamTable thead tr:nth-child(2) th:nth-child(2),#focusTeamTable thead tr:nth-child(2) th:nth-child(3),#focusTeamTable thead tr:nth-child(2) th:nth-child(7),#focusTeamTable thead tr:nth-child(2) th:nth-child(8),#focusTeamTable thead tr:nth-child(2) th:nth-child(12),#focusTeamTable thead tr:nth-child(2) th:nth-child(13){border-top:3px solid #ef4444}
-    #focusTeamTable thead tr:nth-child(2) th:nth-child(4),#focusTeamTable thead tr:nth-child(2) th:nth-child(5),#focusTeamTable thead tr:nth-child(2) th:nth-child(9),#focusTeamTable thead tr:nth-child(2) th:nth-child(10),#focusTeamTable thead tr:nth-child(2) th:nth-child(14),#focusTeamTable thead tr:nth-child(2) th:nth-child(15){border-top:3px solid #22c55e}
-    #focusTeamTable tbody td:nth-child(n+4):nth-child(-n+8){background-color:rgba(148,163,184,.08)}
-    #focusTeamTable tbody td:nth-child(n+9):nth-child(-n+13){background-color:rgba(3,105,161,.14)}
-    #focusTeamTable tbody td:nth-child(n+14){background-color:rgba(180,83,9,.14)}
-    #focusTeamTable tbody td:nth-child(5),#focusTeamTable tbody td:nth-child(6),#focusTeamTable tbody td:nth-child(10),#focusTeamTable tbody td:nth-child(11),#focusTeamTable tbody td:nth-child(15),#focusTeamTable tbody td:nth-child(16){background-image:linear-gradient(rgba(239,68,68,.16),rgba(239,68,68,.16))}
-    #focusTeamTable tbody td:nth-child(7),#focusTeamTable tbody td:nth-child(8),#focusTeamTable tbody td:nth-child(12),#focusTeamTable tbody td:nth-child(13),#focusTeamTable tbody td:nth-child(17),#focusTeamTable tbody td:nth-child(18){background-image:linear-gradient(rgba(34,197,94,.14),rgba(34,197,94,.14))}
-    #focusTeamTable tbody td:nth-child(4),#focusTeamTable tbody td:nth-child(9),#focusTeamTable tbody td:nth-child(14){border-left:2px solid #94a3b8}
-    </style>
+    /* 重點關注 SKU（車隊拆分）: 車隊配色 + 含/不含 OOS 分表 */
+    .ft-cap{margin:14px 0 0;padding:6px 12px;border-radius:6px 6px 0 0;font-weight:700;font-size:13px;display:inline-block}
+    .ft-cap-in{background:rgba(239,68,68,.16);color:#f87171;border:1px solid rgba(239,68,68,.45);border-bottom:none}
+    .ft-cap-ex{background:rgba(34,197,94,.14);color:#4ade80;border:1px solid rgba(34,197,94,.45);border-bottom:none}
+    #focusTeamTable thead tr:first-child th:nth-child(4),#focusTeamTableEx thead tr:first-child th:nth-child(4){background:#334155;color:#fff;border-left:2px solid #94a3b8}
+    #focusTeamTable thead tr:first-child th:nth-child(5),#focusTeamTableEx thead tr:first-child th:nth-child(5){background:#0369a1;color:#fff;border-left:2px solid #94a3b8}
+    #focusTeamTable thead tr:first-child th:nth-child(6),#focusTeamTableEx thead tr:first-child th:nth-child(6){background:#b45309;color:#fff;border-left:2px solid #94a3b8}
+    #focusTeamTable thead tr:nth-child(2) th:nth-child(-n+3),#focusTeamTableEx thead tr:nth-child(2) th:nth-child(-n+3){background:rgba(148,163,184,.20)}
+    #focusTeamTable thead tr:nth-child(2) th:nth-child(n+4):nth-child(-n+6),#focusTeamTableEx thead tr:nth-child(2) th:nth-child(n+4):nth-child(-n+6){background:rgba(3,105,161,.30)}
+    #focusTeamTable thead tr:nth-child(2) th:nth-child(n+7),#focusTeamTableEx thead tr:nth-child(2) th:nth-child(n+7){background:rgba(180,83,9,.30)}
+    #focusTeamTable thead tr:nth-child(2) th:nth-child(1),#focusTeamTable thead tr:nth-child(2) th:nth-child(4),#focusTeamTable thead tr:nth-child(2) th:nth-child(7),#focusTeamTableEx thead tr:nth-child(2) th:nth-child(1),#focusTeamTableEx thead tr:nth-child(2) th:nth-child(4),#focusTeamTableEx thead tr:nth-child(2) th:nth-child(7){border-left:2px solid #94a3b8}
+    #focusTeamTable thead tr:nth-child(2) th{border-top:3px solid #ef4444}
+    #focusTeamTableEx thead tr:nth-child(2) th{border-top:3px solid #22c55e}
+    #focusTeamTable tbody td:nth-child(n+4):nth-child(-n+6),#focusTeamTableEx tbody td:nth-child(n+4):nth-child(-n+6){background-color:rgba(148,163,184,.08)}
+    #focusTeamTable tbody td:nth-child(n+7):nth-child(-n+9),#focusTeamTableEx tbody td:nth-child(n+7):nth-child(-n+9){background-color:rgba(3,105,161,.14)}
+    #focusTeamTable tbody td:nth-child(n+10),#focusTeamTableEx tbody td:nth-child(n+10){background-color:rgba(180,83,9,.14)}
+    #focusTeamTable tbody td:nth-child(5),#focusTeamTable tbody td:nth-child(6),#focusTeamTable tbody td:nth-child(8),#focusTeamTable tbody td:nth-child(9),#focusTeamTable tbody td:nth-child(11),#focusTeamTable tbody td:nth-child(12){background-image:linear-gradient(rgba(239,68,68,.16),rgba(239,68,68,.16))}
+    #focusTeamTableEx tbody td:nth-child(5),#focusTeamTableEx tbody td:nth-child(6),#focusTeamTableEx tbody td:nth-child(8),#focusTeamTableEx tbody td:nth-child(9),#focusTeamTableEx tbody td:nth-child(11),#focusTeamTableEx tbody td:nth-child(12){background-image:linear-gradient(rgba(34,197,94,.14),rgba(34,197,94,.14))}
+    #focusTeamTable tbody td:nth-child(4),#focusTeamTable tbody td:nth-child(7),#focusTeamTable tbody td:nth-child(10),#focusTeamTableEx tbody td:nth-child(4),#focusTeamTableEx tbody td:nth-child(7),#focusTeamTableEx tbody td:nth-child(10){border-left:2px solid #94a3b8}
+  </style>
   
 </body>
 </html>
