@@ -148,10 +148,10 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
 
       <div class="card">
         <h2>重點關注 SKU（車隊拆分）</h2>
-        <div class="muted">同上表相同條件，將出售量 / 取消量拆分為 Express 車隊 同 HKTVmall 車隊，分「含 OOS」同「不含 OOS」兩個表列出取消/退款量同取消率（OOS ＝ OOS + EIGHT_HOUR_OOS）。</div>
+        <div class="muted">同上表相同條件，將出售量 / 取消量拆分為 Express 車隊 同 HKTVmall 車隊，分「OOS only」（只計 OOS 取消）同「不含 OOS」兩個表列出取消/退款量同取消率（OOS ＝ OOS + EIGHT_HOUR_OOS）。</div>
         <div class="muted" id="ftCount" style="margin:8px 0"></div>
         <button class="btn ghost" id="expFocusTeam">匯出重點（車隊拆分）CSV</button>
-        <div class="ft-cap ft-cap-in">含 OOS</div>
+        <div class="ft-cap ft-cap-in">OOS only</div>
         <div class="scroll" style="margin-top:0"><table class="thin" id="focusTeamTable"></table></div>
         <div class="ft-cap ft-cap-ex">不含 OOS</div>
         <div class="scroll" style="margin-top:0"><table class="thin" id="focusTeamTableEx"></table></div>
@@ -370,10 +370,11 @@ function renderFocusTeam(arr){
   const _sub="<th>出售量</th><th>取消/退款量</th><th>取消率</th>";
   const _head="<thead><tr><th rowspan=2>SKU ID</th><th rowspan=2>SKU 名稱</th><th rowspan=2>店舖</th><th colspan=3 style='text-align:center'>合計</th><th colspan=3 style='text-align:center'>Express 車隊</th><th colspan=3 style='text-align:center'>HKTVmall 車隊</th></tr><tr>"+_sub+_sub+_sub+"</tr></thead><tbody>";
   const _blk=(sold,cn,rr)=>"<td>"+fmtN(sold)+"</td><td>"+fmtN(cn)+"</td><td class='"+rateCls(rr)+"'>"+(sold?fmtRate(rr):"-")+"</td>";
+  const _rt=(c,s)=>s?(c/s*100):0;
   const _row=o=>"<tr><td>"+o.sku_id+"</td><td>"+o.name+"</td><td>"+(o.store||"")+"</td>";
   let hIn=_head, hEx=_head;
   f.forEach(o=>{
-    hIn+=_row(o)+_blk(o.sold,o.cancel,o.rate)+_blk(o.eSold,o.eC,o.eR)+_blk(o.hSold,o.hC,o.hR)+"</tr>";
+    hIn+=_row(o)+_blk(o.sold,o.oC,_rt(o.oC,o.sold))+_blk(o.eSold,o.eOC,_rt(o.eOC,o.eSold))+_blk(o.hSold,o.hOC,_rt(o.hOC,o.hSold))+"</tr>";
     hEx+=_row(o)+_blk(o.sold,o.cancel-o.oC,o.nR)+_blk(o.eSold,o.eC-o.eOC,o.eNR)+_blk(o.hSold,o.hC-o.hOC,o.hNR)+"</tr>";
   });
   $("focusTeamTable").innerHTML=hIn+"</tbody>";
