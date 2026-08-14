@@ -266,6 +266,10 @@ window.only3P = function(){ try{ var c=document.getElementById('f3ponly'); retur
     window.__EXCL_CAPS=new Set(["O2O_CUSTOMER_NO_SHOW","FAIL_TO_CHANGE_DELIVERY_TIME","CUSTOMER_NO_SHOW","FAIL_TO_CHANGE_DELIVERY_ADDRESS"]);window.__EXCL_CODES=new Set(["2D1","3F6b","3F98","2C1","2E15","2E18","2E11b","6O3","3F19b","2E17","2E9"]);window.__EXCL_REASON=function(a,b,d){var ps=String(a==null?"":a).split(";");for(var i=0;i<ps.length;i++){if(window.__EXCL_CAPS.has(ps[i].trim()))return true;}var c=String(b==null?"":b).split(" - ")[0].trim();if(window.__EXCL_CODES.has(c))return true;var rr=String(d==null?"":d).split(";");for(var j=0;j<rr.length;j++){if(rr[j].trim()==="DAMAGE")return true;}return false;};
     window.__IS_NULL_REASON=function(v){var s=String(v==null?"":v).trim().toLowerCase();return s===""||s==="null";};
     window.__NO_CANCEL_COUNT=function(cancelReason,csReason,rrReason){var bothNull=window.__IS_NULL_REASON(csReason)&&window.__IS_NULL_REASON(rrReason);var ps=String(cancelReason==null?"":cancelReason).split(";");for(var i=0;i<ps.length;i++){var p=ps[i].trim();if(p==="COURIER_ISSUE")return true;if(p==="CS_CANCEL"&&bothNull)return true;}return false;};
+    /* Invisible List 專用：整張單已全單取消（combined_order_status = Fully Cancelled）唔計 */
+    window.__FULLY_CANCELLED_VALUES=["fully cancelled","fully canceled"];
+    window.__GET_COMBINED_ORDER_STATUS=function(row){if(!row)return"";if(Object.prototype.hasOwnProperty.call(row,"combined_order_status"))return row["combined_order_status"];for(var k in row){if(String(k).replace(/[\s_\-]/g,"").toLowerCase()==="combinedorderstatus")return row[k];}return"";};
+    window.__IS_FULLY_CANCELLED=function(row){var v=String(window.__GET_COMBINED_ORDER_STATUS(row)==null?"":window.__GET_COMBINED_ORDER_STATUS(row)).replace(/[_\-]+/g," ").replace(/\s+/g," ").trim().toLowerCase();return window.__FULLY_CANCELLED_VALUES.indexOf(v)>=0;};
 function ingest(recs){
   ROWS=[];
   for(const rec of recs){
@@ -675,7 +679,7 @@ if(_isXlsx){
     if(!CSV_ROWS) return [];
     var m={};
     for(var i=0;i<CSV_ROWS.length;i++){
-      var row=CSV_ROWS[i]; var sku=row["sku_id"], wm=row["Store_Name"]; if(window.__EXCL_REASON&&window.__EXCL_REASON(row["sku_cancel_reason"],row["sku_cs_refund_reason"],row["REFUND_REPORT_CANCEL_reason"]))continue; var _store=(row["Wet_Market"]||row["merchant_name"]||wm); if(window.only3P && window.only3P() && window.is1P && window.is1P(_store)) continue; if(window.__IV_SKU_ALLOWED && !window.__IV_SKU_ALLOWED(sku)) continue;
+      var row=CSV_ROWS[i]; var sku=row["sku_id"], wm=row["Store_Name"]; if(window.__IS_FULLY_CANCELLED&&window.__IS_FULLY_CANCELLED(row))continue; if(window.__EXCL_REASON&&window.__EXCL_REASON(row["sku_cancel_reason"],row["sku_cs_refund_reason"],row["REFUND_REPORT_CANCEL_reason"]))continue; var _store=(row["Wet_Market"]||row["merchant_name"]||wm); if(window.only3P && window.only3P() && window.is1P && window.is1P(_store)) continue; if(window.__IV_SKU_ALLOWED && !window.__IV_SKU_ALLOWED(sku)) continue;
       if(!sku||!wm) continue;
       var k=sku+"||"+wm;
       if(!m[k]) m[k]={sku_id:sku, sku_name:row["sku_name_chi"]||"", wet_market:wm, sold:0, cancel:0};
@@ -770,6 +774,7 @@ if(_isXlsx){
         if(!sku||!wm) continue;
         if(onlyTable && !keys[String(sku)+"||"+String(wm)]) continue;
         if(ONE && (String(sku)!==ONE.sku || String(wm)!==ONE.wm)) continue;
+        if(window.__IS_FULLY_CANCELLED && window.__IS_FULLY_CANCELLED(row)) continue;
         if(mkVal && String(wm)!==mkVal) continue;
         if(window.__EXCL_REASON && window.__EXCL_REASON(row["sku_cancel_reason"],row["sku_cs_refund_reason"],row["REFUND_REPORT_CANCEL_reason"])) continue;
         var _store=(row["Wet_Market"]||row["merchant_name"]||wm);
