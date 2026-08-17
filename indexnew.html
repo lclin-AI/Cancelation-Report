@@ -1,0 +1,1513 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>貨品取消率分析</title>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root{--bg:#0f1720;--panel:#152230;--panel2:#1b2b3a;--line:#26374a;--txt:#e6edf3;--mut:#8aa0b3;--grn:#3fb950;--grnb:#2ea043;--acc:#f0a020;--red:#f85149;}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,"Microsoft JhengHei",sans-serif;background:var(--bg);color:var(--txt);font-size:13px}
+.layout{display:flex;min-height:100vh}
+.side{width:340px;flex:0 0 340px;background:var(--panel);border-right:1px solid var(--line);padding:16px;overflow-y:auto;height:100vh;position:sticky;top:0}
+.main{flex:1;padding:16px 22px;overflow-x:auto} .ddbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:linear-gradient(90deg,rgba(63,185,80,.20),rgba(63,185,80,.04));border:1px solid var(--grn);border-left:5px solid var(--grn);border-radius:8px;padding:10px 14px;margin:0 0 14px} .ddbar .dd-lab{font-size:11px;letter-spacing:1px;color:var(--grn);background:rgba(63,185,80,.16);border-radius:4px;padding:3px 9px;white-space:nowrap} .ddbar .dd-val{font-size:20px;font-weight:700;color:var(--txt);white-space:nowrap} .ddbar .dd-meta{font-size:11px;color:var(--mut);margin-left:auto;text-align:right} .ddbar.stale{background:linear-gradient(90deg,rgba(248,81,73,.20),rgba(248,81,73,.05));border-color:var(--red);border-left-color:var(--red)} .ddbar.stale .dd-lab{color:var(--red);background:rgba(248,81,73,.16)} .ddbar.stale .dd-val{color:var(--red)} .ddbar .dd-warn{display:none;font-size:12px;font-weight:700;color:var(--red);background:rgba(248,81,73,.14);border:1px solid rgba(248,81,73,.45);border-radius:4px;padding:3px 9px} .ddbar.stale .dd-warn{display:inline-block}
+h1{font-size:18px;margin:0 0 2px}
+.sub{color:var(--mut);font-size:12px;margin-bottom:14px}
+h2{font-size:14px;color:var(--acc);margin:18px 0 8px;border-bottom:1px solid var(--line);padding-bottom:4px}
+.side h3{font-size:13px;color:var(--grn);margin:16px 0 6px}
+label{font-size:12px}
+input,select,button{font-family:inherit}
+input[type=text],input[type=date],select{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:7px 8px;font-size:12px;margin-top:3px}
+.btn{background:var(--grnb);color:#fff;border:0;border-radius:6px;padding:9px 12px;font-size:13px;cursor:pointer;width:100%;margin-top:8px}
+.btn:hover{background:var(--grn)}
+.btn.sec{background:transparent;border:1px solid var(--grn);color:var(--grn);width:auto;padding:5px 10px;margin-top:0}
+.btn.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--mut);width:auto;padding:5px 10px}
+.chk{display:flex;gap:6px;align-items:flex-start;margin:4px 0;font-size:12px;line-height:1.3}
+.chk input{margin-top:2px}
+.twobtn{display:flex;gap:6px;margin:6px 0}
+.twobtn .btn{margin-top:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
+.cards{display:flex;flex-wrap:wrap;gap:14px;margin-bottom:16px}
+.kpi{flex:1;min-width:150px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.kpi .lab{color:var(--mut);font-size:12px}
+.kpi .val{font-size:26px;font-weight:700;margin-top:4px}
+.kpi .val.red{color:var(--red)}
+table{border-collapse:collapse;width:100%;font-size:12px}
+th,td{border-bottom:1px solid var(--line);padding:7px 8px;text-align:right}
+th:nth-child(2),td:nth-child(2),th:first-child,td:first-child{text-align:left}
+thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(--panel)}
+.scroll{max-height:360px;overflow:auto}
+.tabs{display:flex;gap:18px;border-bottom:1px solid var(--line);margin-bottom:16px}
+.tab{padding:8px 2px;cursor:pointer;color:var(--mut);border-bottom:2px solid transparent;font-size:14px}
+.tab.on{color:var(--grn);border-bottom-color:var(--grn)}
+.rate-hi{color:var(--red);font-weight:600}
+.rate-md{color:var(--acc);font-weight:600}
+.status{color:var(--grn);font-size:12px;margin-top:6px}
+.muted{color:var(--mut);font-size:12px}
+.login-wrap{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:50}
+.login-box{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:26px;width:300px}
+.login-box h3{margin:0 0 14px;text-align:center}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:2px}
+.split .h{grid-column:span 3}
+.thin th,.thin td{padding:6px 6px}
+  #ivTable thead th{white-space:nowrap;vertical-align:bottom}
+  #ivTable th:nth-child(2),#ivTable td:nth-child(2),#ivTable th:nth-child(3),#ivTable td:nth-child(3),#ivTable th:nth-child(4),#ivTable td:nth-child(4),#ivTable th:nth-child(5),#ivTable td:nth-child(5){text-align:left}
+  #ivTable th:nth-child(2),#ivTable td:nth-child(2){width:104px}#ivTable th:nth-child(3),#ivTable td:nth-child(3){width:152px}#ivTable th:nth-child(4),#ivTable td:nth-child(4){width:164px;white-space:nowrap}
+  #ivTable th:nth-child(n+6),#ivTable td:nth-child(n+6){white-space:nowrap;font-variant-numeric:tabular-nums}#ivTable tbody tr:hover{background:#152230}
+</style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+  <script>
+    // Supabase (Cancellation Report project) config for Invisible List status.
+    // Publishable/anon key is browser-safe ONLY because the cms_3p_sku table has RLS with read-only (SELECT) policy.
+    // Replace the placeholder below with your project\u0027s publishable/anon key.
+    window.SUPABASE_URL = "https://kipiaezfektzvesksdwr.supabase.co";
+    window.SUPABASE_ANON_KEY = "sb_publishable_iViX0HeOZ91X8OtR8NSDHw_6VDoi2ff";
+  </script>
+</head>
+<body>
+<div class="login-wrap" id="login">
+  <div class="login-box">
+    <h3>請登入</h3>
+    <input type="text" id="user" placeholder="用戶名">
+    <input type="text" id="pw" placeholder="密碼" style="-webkit-text-security:disc">
+    <button class="btn" id="loginBtn">登入</button>
+    <div class="status" id="loginErr" style="color:var(--red)"></div>
+  </div>
+</div>
+
+<div class="layout" id="app" style="display:none">
+  <aside class="side">
+    <h1>貨品取消率分析</h1>
+    <div class="sub" id="srcStatus">未載入</div>
+
+    <h3>資料來源</h3>
+    <select id="srcMode">
+      <option value="default">讀取預設 Google Sheet</option>
+      <option value="url">貼 Google Sheet 連結</option>
+      <option value="drive">Drive 資料夾（自動取最新）</option>
+    <option value="csv">上載 CSV</option>
+    </select>
+    <input type="text" id="sheetUrl" placeholder="貼 Google Sheet 連結" style="display:none">
+    <input type="file" id="csvFile" accept=".csv" style="display:none">
+    <button class="btn" id="loadBtn">載入資料</button>
+
+    <h3>分析設定</h3>
+    <div class="twobtn"><button class="btn sec" id="rAll">全選</button><button class="btn ghost" id="rNone">全不選</button></div>
+    <div style="font-size:11px;color:var(--mut);margin-top:8px">客人自報</div>
+    <div id="selfBox"></div>
+    <div style="font-size:11px;color:var(--mut);margin-top:8px">客服處理</div>
+    <div id="csBox"></div>
+
+    <h3>平台</h3>
+    <select id="fPlatform"><option value="">全部</option><option>Express</option><option>HKTVmall</option></select>
+    <h3>街市 3P</h3>
+    <label style="display:flex;align-items:center;gap:6px;font-weight:normal"><input type="checkbox" id="f3ponly" checked> 街市 3P only（隱藏自營店）<span style="color:var(--mut);font-size:11px">· 只影響 Invisible List</span></label>
+    <h3>車隊</h3>
+    <select id="fTeam"></select>
+
+    <h3>送貨日期</h3>
+    <label>由</label><input type="date" id="fFrom">
+    <label>至</label><input type="date" id="fTo">
+
+    <button class="btn" id="analyzeBtn" style="margin-top:14px">分析</button>
+  </aside>
+
+  <main class="main"><div id="dataDateBar" class="ddbar" style="display:none"><span class="dd-lab">資料日期</span><span class="dd-val" id="ddDate">—</span><span class="dd-warn" id="ddWarn"></span><span class="dd-meta" id="ddMeta"></span></div><script>window.__p2=function(n){return (n<10?'0':'')+n;};window.__hkoToday=null;window.__ddStr='';window.__hkLocalToday=function(){var t0=new Date();try{return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Hong_Kong',year:'numeric',month:'2-digit',day:'2-digit'}).format(t0);}catch(e){return t0.getFullYear()+'-'+window.__p2(t0.getMonth()+1)+'-'+window.__p2(t0.getDate());}};window.__ddCheck=function(){try{var bar=document.getElementById('dataDateBar');if(!bar)return;var today=window.__hkoToday||window.__hkLocalToday();var tick=window.__hkoToday?' ✓':'';var isToday=(!!window.__ddStr&&window.__ddStr===today);var p=today.split('-');var wn=document.getElementById('ddWarn');if(wn)wn.textContent=isToday?'':'⚠ 注意：資料日期不是今日（今日 '+parseInt(p[0],10)+'年'+parseInt(p[1],10)+'月'+parseInt(p[2],10)+'日'+tick+'），可能不是最新檔案，請確認已上載最新資料。';if(isToday){bar.classList.remove('stale');}else{bar.classList.add('stale');}}catch(e){}};window.__loadHkoToday=function(){try{fetch('https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=rhrread&lang=tc',{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){var s=String((j&&j.updateTime)||'');if(/^\d{4}-\d{2}-\d{2}/.test(s)){window.__hkoToday=s.slice(0,10);window.__ddCheck();}}).catch(function(){});}catch(e){}};window.__setDataDate=function(name,mt){try{var bar=document.getElementById('dataDateBar');if(!bar)return;var mm=String(name||'').match(/_(\d{4})(?![0-9])/g);var mmdd=mm?mm[mm.length-1].slice(1):null;var y=mt?new Date(mt).getFullYear():new Date().getFullYear();var txt='';var ddObj=null;if(mmdd){var mo=parseInt(mmdd.slice(0,2),10),da=parseInt(mmdd.slice(2),10);if(mo>=1&&mo<=12&&da>=1&&da<=31){var d=new Date(y,mo-1,da);ddObj=d;var w=['日','一','二','三','四','五','六'][d.getDay()];txt=y+'年'+mo+'月'+da+'日（星期'+w+'）';}}if(!txt&&mt){var d2=new Date(mt);ddObj=d2;txt=d2.getFullYear()+'年'+(d2.getMonth()+1)+'月'+d2.getDate()+'日';}var de=document.getElementById('ddDate');if(de)de.textContent=txt||'未知';var ddStr=ddObj?(ddObj.getFullYear()+'-'+window.__p2(ddObj.getMonth()+1)+'-'+window.__p2(ddObj.getDate())):'';window.__ddStr=ddStr;window.__ddCheck();var meta='檔案：'+(name||'-');if(mt){meta+='　｜　Drive 更新：'+new Date(mt).toLocaleString('zh-HK',{hour12:false});}var me=document.getElementById('ddMeta');if(me)me.textContent=meta;bar.style.display='flex';}catch(e){}};window.__clearDataDate=function(){try{var b=document.getElementById('dataDateBar');if(b)b.style.display='none';}catch(e){}};document.addEventListener('DOMContentLoaded',function(){try{window.__loadHkoToday();var lb=document.getElementById('loadBtn');var sm=document.getElementById('srcMode');if(lb)lb.addEventListener('click',function(){if(!sm||sm.value!=='drive')window.__clearDataDate();});}catch(e){}});</script>
+    <div class="tabs">
+      <div class="tab on" data-tab="main">主要分析</div>
+      <div class="tab" data-tab="yday">主要分析（昨日）</div>
+      <div class="tab" data-tab="detail">Order 明細</div>
+      <div class="tab" data-tab="invisible">Invisible List</div>
+    </div>
+
+    <div id="tab-main">
+      <div class="cards">
+        <div class="kpi"><div class="lab">SKU 數目</div><div class="val" id="kSku">-</div></div>
+        <div class="kpi"><div class="lab">總出售量</div><div class="val" id="kSold">-</div></div>
+        <div class="kpi"><div class="lab">總取消/退款量</div><div class="val" id="kCancel">-</div></div>
+        <div class="kpi"><div class="lab">整體取消率</div><div class="val red" id="kRate">-</div></div>
+      </div>
+
+      <div class="card">
+        <h2>Top 15 高取消率 SKU</h2>
+        <canvas id="chart" height="120"></canvas>
+      </div>
+
+      <div class="card">
+        <h2>重點關注 SKU</h2>
+        <div class="muted">出售量 &gt; <input type="text" id="thVol" value="100" style="width:70px;display:inline-block"> 且 取消率 &gt; <input type="text" id="thRate" value="1" style="width:60px;display:inline-block"> % <button class="btn sec" id="applyTh">套用</button></div>
+        <div class="muted" id="thCount" style="margin:8px 0"></div>
+        <button class="btn ghost" id="expFocus">匯出重點 CSV</button>
+        <div class="scroll" style="margin-top:8px"><table class="thin" id="focusTable"></table></div>
+      </div>
+
+      <div class="card">
+        <h2>重點關注 SKU（車隊拆分）</h2>
+        <div class="muted">同上表相同條件，將出售量 / 取消量拆分為 Express 車隊 同 HKTVmall 車隊，分「OOS only」（只計 OOS 取消）同「不含 OOS」兩個表列出取消/退款量同取消率（OOS ＝ OOS + EIGHT_HOUR_OOS）。</div>
+        <div class="muted" id="ftCount" style="margin:8px 0"></div>
+        <button class="btn ghost" id="expFocusTeam">匯出重點（車隊拆分）CSV</button>
+        <div class="ft-cap ft-cap-in">OOS only</div>
+        <div class="scroll" style="margin-top:0"><table class="thin" id="focusTeamTable"></table></div>
+        <div class="ft-cap ft-cap-ex">不含 OOS</div>
+        <div class="scroll" style="margin-top:0"><table class="thin" id="focusTeamTableEx"></table></div>
+      </div>
+
+      <div class="card">
+        <h2>貨品類別取消率</h2>
+        <button class="btn ghost" id="expCat">匯出類別 CSV</button>
+        <div class="scroll" style="margin-top:8px"><table class="thin" id="catTable"></table></div>
+      </div>
+
+      <div class="card">
+        <h2>車隊對比 (重點 SKU)</h2>
+        <div class="muted">每個類別兩個車隊各自獨立計取消率。</div>
+        <button class="btn ghost" id="expTeam" style="margin-top:6px">匯出車隊對比 CSV</button>
+        <div class="scroll" style="margin-top:8px"><table class="thin" id="teamTable"></table></div>
+      </div>
+    </div>
+
+    <div id="tab-yday" style="display:none">
+      <div class="card" style="padding:10px 14px">
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <div><span class="muted">分析日期（昨日 · 送貨日期）</span><div style="font-size:18px;font-weight:700" id="yDateLab">—</div></div>
+          <button class="btn sec" id="yRefresh" style="width:auto;padding:6px 14px">重新計算</button>
+          <span class="muted" id="yInfo"></span>
+        </div>
+        <div class="muted" style="margin-top:6px">此頁完全獨立：只計送貨日期為昨日嘅資料，所有取消原因全計，唔跟左邊嘅平台 / 車隊 / 原因 / 日期篩選。</div>
+      </div>
+
+      <div class="cards">
+        <div class="kpi"><div class="lab">SKU 數目</div><div class="val" id="ykSku">-</div></div>
+        <div class="kpi"><div class="lab">總出售量</div><div class="val" id="ykSold">-</div></div>
+        <div class="kpi"><div class="lab">總取消/退款量</div><div class="val" id="ykCancel">-</div></div>
+        <div class="kpi"><div class="lab">整體取消率</div><div class="val red" id="ykRate">-</div></div>
+      </div>
+
+      <div class="card">
+        <h2>Top 15 高取消率 SKU（昨日）</h2>
+        <canvas id="ychart" height="120"></canvas>
+      </div>
+
+      <div class="card">
+        <h2>重點關注 SKU（昨日）</h2>
+        <div class="muted">出售量 &gt; <input type="text" id="ythVol" value="100" style="width:70px;display:inline-block"> 且 取消率 &gt; <input type="text" id="ythRate" value="1" style="width:60px;display:inline-block"> % <button class="btn sec" id="yapplyTh">套用</button></div>
+        <div class="muted" id="ythCount" style="margin:8px 0"></div>
+        <button class="btn ghost" id="yexpFocus">匯出重點 CSV</button>
+        <div class="scroll" style="margin-top:8px"><table class="thin" id="yfocusTable"></table></div>
+      </div>
+
+      <div class="card">
+        <h2>重點關注 SKU（車隊拆分 · 昨日）</h2>
+        <div class="muted">同上表相同條件，將出售量 / 取消量拆分為 Express 車隊 同 HKTVmall 車隊，分「OOS only」（只計 OOS 取消）同「不含 OOS」兩個表列出取消/退款量同取消率（OOS ＝ OOS + EIGHT_HOUR_OOS）。</div>
+        <div class="muted" id="yftCount" style="margin:8px 0"></div>
+        <button class="btn ghost" id="yexpFocusTeam">匯出重點（車隊拆分）CSV</button>
+        <div class="ft-cap ft-cap-in">OOS only</div>
+        <div class="scroll" style="margin-top:0"><table class="thin" id="yfocusTeamTable"></table></div>
+        <div class="ft-cap ft-cap-ex">不含 OOS</div>
+        <div class="scroll" style="margin-top:0"><table class="thin" id="yfocusTeamTableEx"></table></div>
+      </div>
+
+      <div class="card">
+        <h2>貨品類別取消率（昨日）</h2>
+        <button class="btn ghost" id="yexpCat">匯出類別 CSV</button>
+        <div class="scroll" style="margin-top:8px"><table class="thin" id="ycatTable"></table></div>
+      </div>
+
+      <div class="card">
+        <h2>車隊對比 (重點 SKU · 昨日)</h2>
+        <div class="muted">每個類別兩個車隊各自獨立計取消率。</div>
+        <button class="btn ghost" id="yexpTeam" style="margin-top:6px">匯出車隊對比 CSV</button>
+        <div class="scroll" style="margin-top:8px"><table class="thin" id="yteamTable"></table></div>
+      </div>
+    </div>
+
+    <div id="tab-detail" style="display:none">
+      <div class="card">
+        <h2>Order 明細 (跟進用)</h2>
+        <select id="odSku"><option value="">全部 SKU</option></select>
+        <input type="text" id="odKw" placeholder="再篩 SKU 名稱關鍵字 (可留空)" style="margin-top:6px">
+        <button class="btn sec" id="loadDetail" style="margin-top:8px">載入明細</button>
+        <button class="btn ghost" id="expDetail" style="margin-top:8px">匯出明細 CSV</button>
+        <div class="scroll" style="margin-top:8px"><table class="thin" id="detailTable"></table></div>
+      </div>
+    </div>
+<div id="tab-invisible" style="display:none">
+      <div class="card">
+        <h2>Invisible List（按 SKU × 街市）</h2>
+        <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px">
+          <div><label>取消率 &gt; (%)</label><input type="text" id="ivRate" value="1" style="width:80px"></div>
+          <div><label>出售量 &gt; </label><input type="text" id="ivSold" value="100" style="width:80px"></div>
+          <div><label>街市 Wet Market</label><select id="ivMarket" style="width:180px"><option value="">全部街市</option></select></div><div><label>店舖 Store</label><select id="ivStore" style="width:200px"><option value="">全部店舖</option></select></div><div><label>排序 Sort</label><select id="ivSortMode" style="width:190px"><option value="rate">取消率</option><option value="market">街市 → 取消率</option></select></div>
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--mut)"><input type="checkbox" id="ivGroupStore">按街市 / 店舖分組</label>
+          <button class="btn sec" id="ivApply" style="width:auto;padding:6px 14px">套用</button>
+          <button class="btn ghost" id="ivExp" style="width:auto;padding:6px 14px">匯出 Invisible List CSV（匯總表）</button><button class="btn ghost" id="ivExpRaw" style="width:auto;padding:6px 14px">匯出取消 Order Entry 原始資料 CSV</button><label style="font-size:12px;color:var(--mut);display:inline-flex;align-items:center;gap:4px"><input type="checkbox" id="ivExpOnlyTable" checked>只限表內 SKU</label><button class="btn sec" id="ivFetchStatus" style="width:auto;padding:6px 14px">查詢狀態</button><button class="btn" id="ivSetInvisible" style="width:auto;padding:6px 14px">設為Invisible (已選)</button><button class="btn ghost" id="ivCancelSched" style="width:auto;padding:6px 14px">取消排程 (已選)</button>
+        </div>
+        <div id="ivInfo" style="font-size:12px;color:var(--mut);margin-bottom:6px"></div>
+        <div id="ivSelInfo" style="font-size:12px;color:var(--acc);margin-bottom:6px">已選 0 個 SKU</div>
+        <div style="overflow:auto;max-height:70vh">
+          <table class="thin" id="ivTable" style="width:100%;border-collapse:collapse">
+            <thead><tr>
+              <th style="width:32px;text-align:center"><input type="checkbox" id="ivSelAll" title="選"></th>
+              <th data-sort="wet_market" style="cursor:pointer;text-align:left">街市 Wet Market</th>
+              <th data-sort="store_name" style="cursor:pointer;text-align:left">店舖 Store</th>
+              <th data-sort="sku_id" style="cursor:pointer;text-align:left">SKU ID</th>
+              <th data-sort="sku_name" style="cursor:pointer;text-align:left">SKU 名稱</th>
+              <th data-sort="sold" style="cursor:pointer;text-align:right">出售量</th>
+              <th data-sort="cancel" style="cursor:pointer;text-align:right">取消/退款量</th>
+              <th data-sort="rate" style="cursor:pointer;text-align:right">取消率 %</th>
+            
+              <th data-sort="_status" style="cursor:pointer;text-align:center">顯示於Customer App</th></tr></thead>
+            <tbody id="ivBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<script>
+
+const SETTINGS = {
+  google_sheets: { spreadsheet_id: "1y4sZs2yvqZZ2foa27AvJOt19Pg4lvDHzfnZstAQ4zQU", gid: "0" },
+  columns: { delivery_date:"delivery_date", order_no:"order_number", carline:"carline_code", merchant:"merchant_name", sku_id:"sku_id",
+             sku_name:"sku_name_chi", cancel_type:"sku_cancel_reason", type:"express_main_cat_name_zh", type2:"sub_cat1_name_zh",
+             sold_qty:"quantity", refund_qty:"refund_quantity" },
+  logic: { express_carline_prefix:"WM", express_order_prefix:"M" }
+};
+const APP_USER="admin";  // NOTE: replace with your real credentials handling
+let ROWS=[]; let VIEW=[]; let CHART=null;
+const $=id=>document.getElementById(id);
+const C=SETTINGS.columns, L=SETTINGS.logic;
+
+// ---- login (kept simple; you enter creds) ----
+$("loginBtn").onclick=()=>{
+  // Basic gate only; adjust to your auth. Accept any non-empty for demo parity with static tool.
+  if($("user").value.trim() && $("pw").value.trim()){ $("login").style.display="none"; $("app").style.display="flex"; }
+  else $("loginErr").textContent="請輸入用戶名同密碼";
+};
+
+// ---- source mode ----
+$("srcMode").onchange=e=>{
+  $("sheetUrl").style.display = e.target.value==="url"?"block":"none";
+  $("csvFile").style.display = e.target.value==="csv"?"block":"none";
+};
+
+function csvUrl(sid,gid){return "https://docs.google.com/spreadsheets/d/"+sid+"/export?format=csv&gid="+(gid||"0");}
+function fetchCsv(url){return new Promise((res,rej)=>{Papa.parse(url,{download:true,header:true,skipEmptyLines:true,complete:r=>res(r.data),error:rej});});}
+function fetchCsvFile(file){return new Promise((res,rej)=>{Papa.parse(file,{header:true,skipEmptyLines:true,complete:r=>res(r.data),error:rej});});}
+
+$("loadBtn").onclick=async()=>{
+  const mode=$("srcMode").value;
+  $("srcStatus").textContent="載入中…";
+  try{
+    let recs;
+    if(mode==="default") recs=await fetchCsv(csvUrl(SETTINGS.google_sheets.spreadsheet_id,SETTINGS.google_sheets.gid));
+    else if(mode==="url"){ const u=$("sheetUrl").value.trim(); const sid=(u.match(/\/d\/([a-zA-Z0-9_-]+)/)||[])[1]; const gid=(u.match(/[#&]gid=(\d+)/)||[])[1]||"0"; recs=await fetchCsv(csvUrl(sid,gid)); }
+    else { recs=await fetchCsvFile($("csvFile").files[0]); }
+    ingest(recs);
+    $("srcStatus").textContent="已載入 "+ROWS.length+" 行";
+    buildFilters();
+  }catch(err){ $("srcStatus").textContent="載入失敗: "+err.message; }
+};
+
+function toNum(v){const n=parseFloat(String(v).replace(/[^0-9.\-]/g,""));return isNaN(n)?0:n;}
+window.EXCLUDE_1P = ("叮叮菓菜|肉肉鮮生|SoFresh Select|九龍城 新興文記牛肉|九龍城 李輝記牛肉|紅豆烘焙|嘉頓麵包|3小時雪糕|有機農莊|街市即日餸|八叔凍肉|3小時超市").split('|');
+window.is1P = function(name){ try{ return window.EXCLUDE_1P.indexOf(String(name||'').trim())>=0; }catch(e){ return false; } };
+window.only3P = function(){ try{ var c=document.getElementById('f3ponly'); return c? !!c.checked : true; }catch(e){ return true; } };
+    window.__EXCL_CAPS=new Set(["O2O_CUSTOMER_NO_SHOW","FAIL_TO_CHANGE_DELIVERY_TIME","CUSTOMER_NO_SHOW","FAIL_TO_CHANGE_DELIVERY_ADDRESS"]);window.__EXCL_CODES=new Set(["2D1","3F6b","3F98","2C1","2E15","2E18","2E11b","6O3","3F19b","2E17","2E9"]);window.__EXCL_REASON=function(a,b,d){var ps=String(a==null?"":a).split(";");for(var i=0;i<ps.length;i++){if(window.__EXCL_CAPS.has(ps[i].trim()))return true;}var c=String(b==null?"":b).split(" - ")[0].trim();if(window.__EXCL_CODES.has(c))return true;var rr=String(d==null?"":d).split(";");for(var j=0;j<rr.length;j++){if(rr[j].trim()==="DAMAGE")return true;}return false;};
+    window.__IS_NULL_REASON=function(v){var s=String(v==null?"":v).trim().toLowerCase();return s===""||s==="null";};
+    window.__NO_CANCEL_COUNT=function(cancelReason,csReason,rrReason){var bothNull=window.__IS_NULL_REASON(csReason)&&window.__IS_NULL_REASON(rrReason);var ps=String(cancelReason==null?"":cancelReason).split(";");for(var i=0;i<ps.length;i++){var p=ps[i].trim();if(p==="COURIER_ISSUE")return true;if(p==="CS_CANCEL"&&bothNull)return true;}return false;};
+    /* Invisible List 專用：整張單已全單取消（combined_order_status = Fully Cancelled）唔計 */
+    window.__FULLY_CANCELLED_VALUES=["fully cancelled","fully canceled"];
+    window.__GET_COMBINED_ORDER_STATUS=function(row){if(!row)return"";if(Object.prototype.hasOwnProperty.call(row,"combined_order_status"))return row["combined_order_status"];for(var k in row){if(String(k).replace(/[\s_\-]/g,"").toLowerCase()==="combinedorderstatus")return row[k];}return"";};
+    window.__IS_FULLY_CANCELLED=function(row){var v=String(window.__GET_COMBINED_ORDER_STATUS(row)==null?"":window.__GET_COMBINED_ORDER_STATUS(row)).replace(/[_\-]+/g," ").replace(/\s+/g," ").trim().toLowerCase();return window.__FULLY_CANCELLED_VALUES.indexOf(v)>=0;};
+function ingest(recs){
+  ROWS=[];
+  for(const rec of recs){
+    if(!rec) continue;
+    const g=k=>(rec[C[k]]??"");
+    const order=String(g("order_no"));
+    if(order.trim()===""&&String(g("sku_id")).trim()===""&&String(g("sku_name")).trim()==="") continue;
+    const platform = order.trim().startsWith(L.express_order_prefix)?"Express":"HKTVmall";
+    const carRaw=String(g("carline"));
+    let team="HKTVmall車隊";
+    if(carRaw.includes("-")){ const after=carRaw.split("-")[1].trim(); if(after.slice(0,2).toUpperCase()===L.express_carline_prefix) team="Express車隊"; }
+    ROWS.push({
+      order, platform, team, carline:carRaw, merchant:String(g("merchant")||rec["Wet_Market"]||"").trim(),
+      sku_id:String(g("sku_id")), sku_name:String(g("sku_name")),
+      type:String(g("type"))||"(未分類)",
+      type2:String(g("type2"))||"(未分類)",
+      cancel_type:String(g("cancel_type")).trim(),
+      cs_reason:String(rec["sku_cs_refund_reason"]==null?"":rec["sku_cs_refund_reason"]).trim(),
+      rr_reason:String(rec["REFUND_REPORT_CANCEL_reason"]==null?"":rec["REFUND_REPORT_CANCEL_reason"]).trim(),
+      sold:toNum(g("sold_qty")), refund:toNum(g("refund_qty")),
+      date:String(g("delivery_date"))
+    });
+  }
+}
+
+// ---- reason (cancel_type) checkboxes = 分析設定 ----
+function buildFilters(){
+  const reasons=[...new Set(ROWS.map(r=>r.cancel_type).filter(x=>x!==""))].sort();
+  const self=["DAMAGE","MISSING_ITEM","QUALITY","WRONG_ITEM"];
+  const selfR=reasons.filter(r=>self.includes(r));
+  const csR=reasons.filter(r=>!self.includes(r));
+  const mk=(box,arr)=>{ box.innerHTML=""; arr.forEach(r=>{ const id="ck_"+btoa(unescape(encodeURIComponent(r))).replace(/=/g,""); box.insertAdjacentHTML("beforeend",'<label class="chk"><input type="checkbox" checked value="'+r.replace(/"/g,"&quot;")+'"> '+r+'</label>'); }); };
+  mk($("selfBox"),selfR.length?selfR:self);
+  mk($("csBox"),csR);
+  const teams=[...new Set(ROWS.map(r=>r.team))];
+  $("fTeam").innerHTML='<option value="">全部</option>'+teams.map(t=>'<option>'+t+'</option>').join("");
+  const skus=[...new Set(ROWS.map(r=>r.sku_id).filter(Boolean))];
+  $("odSku").innerHTML='<option value="">全部 SKU</option>'+skus.map(s=>'<option>'+s+'</option>').join("");
+}
+$("rAll").onclick=()=>document.querySelectorAll("#selfBox input,#csBox input").forEach(c=>c.checked=true);
+$("rNone").onclick=()=>document.querySelectorAll("#selfBox input,#csBox input").forEach(c=>c.checked=false);
+
+function selectedReasons(){ return [...document.querySelectorAll("#selfBox input:checked,#csBox input:checked")].map(c=>c.value); }
+function filtered(){
+  const plat=$("fPlatform").value, team=$("fTeam").value, from=$("fFrom").value, to=$("fTo").value;
+  const rs=selectedReasons();
+  return ROWS.filter(r=>{ /* 主要分析 / Order 明細 include ALL cancellation reasons: __EXCL_REASON row-drop and __NO_CANCEL_COUNT are applied to the Invisible List only. 1P stores are also included here. */
+    if(plat&&r.platform!==plat) return false;
+    if(team&&r.team!==team) return false;
+    if(from&&r.date&&r.date<from) return false;
+    if(to&&r.date&&r.date>to) return false;
+    return true;
+  });
+}
+// a row counts as cancelled if its cancel_type is among the selected reasons OR refund>0
+function isCancelled(r,rs){ /* all cancellation reasons count on 主要分析 / Order 明細 */ return (rs.length? rs.includes(r.cancel_type):true) && r.refund>0; }
+
+$("analyzeBtn").onclick=runAnalyze;
+function runAnalyze(){
+  VIEW=filtered();
+  const rs=selectedReasons();
+  // aggregate by SKU
+  const bySku={};
+  let totSold=0,totCancel=0;
+  VIEW.forEach(r=>{
+    const k=r.sku_id||r.sku_name;
+    if(!bySku[k]) bySku[k]={sku_id:r.sku_id,name:r.sku_name,sold:0,cancel:0,stores:{},eSold:0,eC:0,hSold:0,hC:0,oC:0,eOC:0,hOC:0};
+    bySku[k].sold+=r.sold; if(r.merchant) bySku[k].stores[r.merchant]=1; totSold+=r.sold;
+    const c=isCancelled(r,rs)?r.refund:0;
+    bySku[k].cancel+=c; totCancel+=c;
+    const _oos=(r.cancel_type==="OOS"||r.cancel_type==="EIGHT_HOUR_OOS")?c:0; bySku[k].oC+=_oos;
+    if((r.team||"").indexOf("Express")>=0){bySku[k].eSold+=r.sold;bySku[k].eC+=c;bySku[k].eOC+=_oos;}else{bySku[k].hSold+=r.sold;bySku[k].hC+=c;bySku[k].hOC+=_oos;}
+  });
+  const arr=Object.values(bySku).map(o=>({...o,store:Object.keys(o.stores||{}).join(", "),rate:o.sold?o.cancel/o.sold*100:0,eR:o.eSold?o.eC/o.eSold*100:0,hR:o.hSold?o.hC/o.hSold*100:0,oR:o.sold?o.oC/o.sold*100:0,nR:o.sold?(o.cancel-o.oC)/o.sold*100:0,eOR:o.eSold?o.eOC/o.eSold*100:0,eNR:o.eSold?(o.eC-o.eOC)/o.eSold*100:0,hOR:o.hSold?o.hOC/o.hSold*100:0,hNR:o.hSold?(o.hC-o.hOC)/o.hSold*100:0}));
+  $("kSku").textContent=arr.length.toLocaleString("en-US");
+  $("kSold").textContent=Math.round(totSold).toLocaleString();
+  $("kCancel").textContent=Math.round(totCancel).toLocaleString();
+  $("kRate").textContent=(totSold?(totCancel/totSold*100):0).toFixed(2)+"%";
+  window.__lastArr=arr; renderChart(arr); renderFocus(arr); renderFocusTeam(arr); renderCat(rs); renderTeam(rs);
+}
+function fmtN(x){return Math.round(x).toLocaleString("en-US");}
+    function fmtRate(x){return x.toFixed(2)+"%";}
+function rateCls(x){return x>=5?"rate-hi":x>=2?"rate-md":"";}
+function renderChart(arr){
+  const _v=parseFloat($('thVol').value)||0,_rt=parseFloat($('thRate').value)||0;const top=[...arr].filter(o=>o.sold>_v&&o.rate>_rt).sort((a,b)=>b.rate-a.rate).slice(0,15);
+  if(CHART)CHART.destroy();
+  CHART=new Chart($("chart"),{type:"bar",data:{labels:top.map(o=>(o.name||o.sku_id).slice(0,14)),datasets:[{data:top.map(o=>o.rate),backgroundColor:top.map(o=>o.rate>=5?"#f0a020":"#3fb950")}]},options:{indexAxis:"y",plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){var v=(c.parsed&&c.parsed.x!=null)?c.parsed.x:c.raw;return " "+Number(v).toFixed(2)+"%";}}}},scales:{x:{ticks:{color:"#8aa0b3",callback:function(v){return v+"%";}}},y:{ticks:{color:"#e6edf3"}}}}});
+}
+function renderFocus(arr){
+  const v=parseFloat($("thVol").value)||0, rt=parseFloat($("thRate").value)||0;
+  const f=arr.filter(o=>o.sold>v&&o.rate>rt).sort((a,b)=>b.rate-a.rate);
+  $("thCount").innerHTML='符合「出售量 &gt; '+v+' 且 取消率 &gt; '+rt+'%」嘅 SKU 共 <b>'+f.length+'</b> 個';
+  let h="<thead><tr><th>SKU ID</th><th>SKU 名稱</th><th>店舖</th><th>出售量</th><th>取消/退款量</th><th>取消率 %</th></tr></thead><tbody>";
+  f.forEach(o=>{h+="<tr><td>"+o.sku_id+"</td><td>"+o.name+"</td><td>"+(o.store||"")+"</td><td>"+fmtN(o.sold)+"</td><td>"+fmtN(o.cancel)+"</td><td class='"+rateCls(o.rate)+"'>"+fmtRate(o.rate)+"</td></tr>";});
+  $("focusTable").innerHTML=h+"</tbody>";
+  window.__focus=f;
+}
+function renderFocusTeam(arr){
+  const v=parseFloat($("thVol").value)||0, rt=parseFloat($("thRate").value)||0;
+  const f=arr.filter(o=>o.sold>v&&o.rate>rt).sort((a,b)=>b.rate-a.rate);
+  $("ftCount").innerHTML='符合「出售量 &gt; '+v+' 且 取消率 &gt; '+rt+'%」嘅 SKU 共 <b>'+f.length+'</b> 個';
+  const _sub="<th>出售量</th><th>取消/退款量</th><th>取消率</th>";
+  const _head="<thead><tr><th rowspan=2>SKU ID</th><th rowspan=2>SKU 名稱</th><th rowspan=2>店舖</th><th colspan=3 style='text-align:center'>合計</th><th colspan=3 style='text-align:center'>Express 車隊</th><th colspan=3 style='text-align:center'>HKTVmall 車隊</th></tr><tr>"+_sub+_sub+_sub+"</tr></thead><tbody>";
+  const _blk=(sold,cn,rr)=>"<td>"+fmtN(sold)+"</td><td>"+fmtN(cn)+"</td><td class='"+rateCls(rr)+"'>"+(sold?fmtRate(rr):"-")+"</td>";
+  const _rt=(c,s)=>s?(c/s*100):0;
+  const _row=o=>"<tr><td>"+o.sku_id+"</td><td>"+o.name+"</td><td>"+(o.store||"")+"</td>";
+  let hIn=_head, hEx=_head;
+  f.forEach(o=>{
+    hIn+=_row(o)+_blk(o.sold,o.oC,_rt(o.oC,o.sold))+_blk(o.eSold,o.eOC,_rt(o.eOC,o.eSold))+_blk(o.hSold,o.hOC,_rt(o.hOC,o.hSold))+"</tr>";
+    hEx+=_row(o)+_blk(o.sold,o.cancel-o.oC,o.nR)+_blk(o.eSold,o.eC-o.eOC,o.eNR)+_blk(o.hSold,o.hC-o.hOC,o.hNR)+"</tr>";
+  });
+  $("focusTeamTable").innerHTML=hIn+"</tbody>";
+  const _exT=$("focusTeamTableEx"); if(_exT) _exT.innerHTML=hEx+"</tbody>";
+  window.__focusTeam=f;
+}
+$("applyTh").onclick=()=>{ if(window.__lastArr){ renderFocus(window.__lastArr); renderFocusTeam(window.__lastArr); renderChart(window.__lastArr); }; };
+function renderCat(rs){
+  const byCat = {};
+  VIEW.forEach(r=>{ const m = r.type||"(未分類)", s2 = r.type2||"(未分類)"; const k = m+" \u241F "+s2; if(!byCat[k])byCat[k]={main:m,sub:s2,sold:0,cancel:0}; byCat[k].sold+=r.sold; byCat[k].cancel+=isCancelled(r,rs)?r.refund:0; });
+  const arr = Object.values(byCat).map(o=>({cat:o.main+" / "+o.sub,main:o.main,sub:o.sub,sold:o.sold,cancel:o.cancel,rate:o.sold?o.cancel/o.sold*100:0})).sort((a,b)=>b.rate-a.rate);
+  let h = "<thead><tr><th>主類別</th><th>子類別</th><th>出售量</th><th>取消/退款量</th><th>取消率 %</th></tr></thead><tbody>";
+  arr.forEach(o=>{h+="<tr><td>"+o.main+"</td><td>"+o.sub+"</td><td>"+fmtN(o.sold)+"</td><td>"+fmtN(o.cancel)+"</td><td class='"+rateCls(o.rate)+"'>"+fmtRate(o.rate)+"</td></tr>";});
+  $("catTable").innerHTML = h+"</tbody>"; window.__cat = arr;
+}
+function renderTeam(rs){
+  const byCat = {};
+  VIEW.forEach(r=>{
+    const m = r.type||"(未分類)", s2 = r.type2||"(未分類)"; const k = m+" \u241F "+s2; const tm = r.team.indexOf("Express")>=0?"e":"h";
+    if(!byCat[k])byCat[k]={main:m,sub:s2,eSold:0,eC:0,hSold:0,hC:0};
+    const c = isCancelled(r,rs)?r.refund:0;
+    if(tm==="e"){byCat[k].eSold+=r.sold;byCat[k].eC+=c;}else{byCat[k].hSold+=r.sold;byCat[k].hC+=c;}
+  });
+  const arr = Object.values(byCat).map(o=>({cat:o.main+" / "+o.sub,...o,eR:o.eSold?o.eC/o.eSold*100:0,hR:o.hSold?o.hC/o.hSold*100:0}));
+  arr.sort((a,b)=>Math.max(b.eR,b.hR)-Math.max(a.eR,a.hR));
+  let h = "<thead><tr><th rowspan=2>主類別</th><th rowspan=2>子類別</th><th colspan=3 style='text-align:center'>Express 車隊</th><th colspan=3 style='text-align:center'>HKTVmall 車隊</th></tr><tr><th>出售</th><th>取消</th><th>率%</th><th>出售</th><th>取消</th><th>率%</th></tr></thead><tbody>";
+  arr.forEach(o=>{h+="<tr><td>"+o.main+"</td><td>"+o.sub+"</td><td>"+fmtN(o.eSold)+"</td><td>"+fmtN(o.eC)+"</td><td class='"+rateCls(o.eR)+"'>"+fmtRate(o.eR)+"</td><td>"+fmtN(o.hSold)+"</td><td>"+fmtN(o.hC)+"</td><td class='"+rateCls(o.hR)+"'>"+fmtRate(o.hR)+"</td></tr>";});
+  $("teamTable").innerHTML=h+"</tbody>"; window.__team=arr;
+}
+// keep last arr for threshold re-apply
+const _origRun=runAnalyze;
+
+// ---- tabs ----
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
+  document.querySelectorAll(".tab").forEach(x=>x.classList.remove("on")); t.classList.add("on");
+  $("tab-main").style.display=t.dataset.tab==="main"?"block":"none";
+  $("tab-detail").style.display=t.dataset.tab==="detail"?"block":"none";
+});
+
+// ---- order detail ----
+$("loadDetail").onclick=()=>{
+  const rs=selectedReasons(); const sku=$("odSku").value; const kw=$("odKw").value.trim();
+  const rows=filtered().filter(r=> isCancelled(r,rs) && (!sku||r.sku_id===sku) && (!kw||r.sku_name.includes(kw)));
+  let h="<thead><tr><th>訂單編號</th><th>SKU 名稱</th><th>SKU ID</th><th>退款件數</th><th>原因</th><th>平台</th><th>車隊</th><th>車隊代碼</th><th>送貨日期</th></tr></thead><tbody>";
+  rows.slice(0,1000).forEach(r=>{h+="<tr><td>"+r.order+"</td><td>"+r.sku_name+"</td><td>"+r.sku_id+"</td><td>"+fmtN(r.refund)+"</td><td>"+r.cancel_type+"</td><td>"+r.platform+"</td><td>"+r.team+"</td><td>"+r.carline+"</td><td>"+r.date+"</td></tr>";});
+  $("detailTable").innerHTML=h+"</tbody>"; window.__detail=rows;
+};
+
+// ---- CSV export helpers ----
+function dl(name,rows){const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(",")).join("\n");const b=new Blob([csv],{type:"text/csv"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=name;a.click();}
+$("expFocus").onclick=()=>dl("focus.csv",[["SKU ID","SKU 名稱","出售量","取消量","取消率%"],...(window.__focus||[]).map(o=>[o.sku_id,o.name,o.sold,o.cancel,o.rate.toFixed(2)])]);
+$("expFocusTeam").onclick=()=>dl("focus_by_team.csv",[["SKU ID","SKU 名稱","店舖","出售量","取消量(含OOS)","取消率%(含OOS)","取消量(不含OOS)","取消率%(不含OOS)","Express 出售量","Express 取消量(含OOS)","Express 取消率%(含OOS)","Express 取消量(不含OOS)","Express 取消率%(不含OOS)","HKTVmall 出售量","HKTVmall 取消量(含OOS)","HKTVmall 取消率%(含OOS)","HKTVmall 取消量(不含OOS)","HKTVmall 取消率%(不含OOS)"],...(window.__focusTeam||[]).map(o=>[o.sku_id,o.name,o.store||"",o.sold,o.cancel,o.rate.toFixed(2),o.cancel-o.oC,o.nR.toFixed(2),o.eSold,o.eC,o.eR.toFixed(2),o.eC-o.eOC,o.eNR.toFixed(2),o.hSold,o.hC,o.hR.toFixed(2),o.hC-o.hOC,o.hNR.toFixed(2)])]);
+$("expCat").onclick=()=>dl("category.csv",[["主類別","子類別","出售量","取消量","取消率%"],...(window.__cat||[]).map(o=>[o.main,o.sub,o.sold,o.cancel,o.rate.toFixed(2)])]);
+$("expTeam").onclick=()=>dl("team.csv",[["主類別","子類別","E出售","E取消","E率%","H出售","H取消","H率%"],...(window.__team||[]).map(o=>[o.main,o.sub,o.eSold,o.eC,o.eR.toFixed(2),o.hSold,o.hC,o.hR.toFixed(2)])]);
+$("expDetail").onclick=()=>dl("detail.csv",[["訂單編號","SKU 名稱","SKU ID","退款件數","原因","平台","車隊","車隊代碼","送貨日期"],...(window.__detail||[]).map(r=>[r.order,r.sku_name,r.sku_id,r.refund,r.cancel_type,r.platform,r.team,r.carline,r.date])]);
+
+// store arr for threshold reapply
+const _ra=runAnalyze;
+window.runAnalyze=function(){_ra();window.__lastArr=Object.values({});};
+
+</script>
+
+
+    <script>
+/* Drive folder auto-load (latest file) — added feature */
+(function(){
+  var DRIVE_FOLDER_ID = "1FrDUecrQv4AR-bgiGGlOi4xjnXlfI8Zd";
+  var DRIVE_API_KEY = "AIzaSyD1jQcj2R5Rid5Pde1tFEFkfnHjI251YpM";
+  function q(id){ return document.getElementById(id); }
+  async function loadFromDriveFolder(){
+    var status = q('driveStatus');
+    function say(m){ if(status) status.textContent = m; }
+    try{
+      say('讀取 Drive 資料夾中…');
+      var listUrl = 'https://www.googleapis.com/drive/v3/files?q=' +
+        encodeURIComponent("'"+DRIVE_FOLDER_ID+"' in parents and trashed=false") +
+        '&orderBy=modifiedTime desc&pageSize=20' +
+        '&fields=' + encodeURIComponent('files(id,name,modifiedTime,mimeType)') +
+        '&key=' + DRIVE_API_KEY;
+      var lr = await fetch(listUrl);
+      if(!lr.ok) throw new Error('list HTTP '+lr.status);
+      var lj = await lr.json();
+      var files = (lj.files||[]).filter(function(f){var n=(f.name||'').toLowerCase();var mt=f.mimeType||'';return n.endsWith('.csv')||n.endsWith('.xlsx')||mt==='text/csv'||mt==='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';});
+      files=(lj.files||[]).filter(function(f){var n2=(f.name||'').toLowerCase();var mt2=f.mimeType||'';return n2.endsWith('.csv')||n2.endsWith('.xlsx')||mt2==='text/csv'||mt2.indexOf('spreadsheetml')!==-1||mt2.indexOf('google-apps.spreadsheet')!==-1;});
+      if(!files.length){ say('資料夾中找不到 CSV 檔'); return; }
+      var latest = files[0];
+      say('載入最新檔案：'+latest.name+' …');
+      var _n=(latest.name||'').toLowerCase();
+var _isXlsx = _n.endsWith('.xlsx') || (latest.mimeType||'').indexOf('spreadsheetml')>=0;
+      var _isGS=(latest.mimeType||'').indexOf('google-apps.spreadsheet')!==-1;function _colName(cn){var cs='';while(cn){var cm=(cn-1)%26;cs=String.fromCharCode(65+cm)+cs;cn=Math.floor((cn-1)/26);}return cs;}async function _loadSheet(sid){var base='https://sheets.googleapis.com/v4/spreadsheets/'+sid;var mj=await (await fetch(base+'?fields='+encodeURIComponent('sheets.properties(title,gridProperties)')+'&key='+DRIVE_API_KEY)).json();var pr=((mj.sheets||[])[0]||{}).properties||{};var stitle=pr.title||'Sheet1';var gp=pr.gridProperties||{};var rc=gp.rowCount||1000;var lc=_colName(gp.columnCount||26);var hj=await (await fetch(base+'/values/'+encodeURIComponent(stitle+'!A1:'+lc+'1')+'?key='+DRIVE_API_KEY)).json();var hdr=((hj.values||[])[0]||[]);if(!hdr.length)return [];var step=20000,ranges=[];for(var st=2;st<=rc;st+=step){ranges.push([st,Math.min(rc,st+step-1)]);}var parts=new Array(ranges.length),nx=0,dn=0,CONC=6;async function _w(){for(;;){var k=nx++;if(k>=ranges.length)return;var rg=stitle+'!A'+ranges[k][0]+':'+lc+ranges[k][1];var vj=await (await fetch(base+'/values/'+encodeURIComponent(rg)+'?key='+DRIVE_API_KEY)).json();parts[k]=vj.values||[];dn++;say('\u8f09\u5165\u4e2d\u2026 '+dn+'/'+ranges.length+' \u6bb5');}}var ws=[];for(var w=0;w<Math.min(CONC,ranges.length);w++){ws.push(_w());}await Promise.all(ws);var acc=[];for(var p=0;p<parts.length;p++){var vals=parts[p]||[];for(var vi=0;vi<vals.length;vi++){var v=vals[vi],o={};for(var ci=0;ci<hdr.length;ci++){var x=v[ci];o[hdr[ci]]=(x===undefined||x===null)?'':x;}acc.push(o);}}say('\u8f09\u5165\u4e2d\u2026 '+acc.length+' \u5217');return acc;}if(_isGS){_finish(await _loadSheet(latest.id));return;}
+var dlUrl='https://www.googleapis.com/drive/v3/files/'+latest.id+'?alt=media&key='+DRIVE_API_KEY;
+var dr=await fetch(dlUrl);
+if(!dr.ok) throw new Error('download HTTP '+dr.status);
+function _finish(rows){
+  try{ rows.forEach(function(r){
+    if(r && (r['Wet Market']===undefined || r['Wet Market']==='' || r['Wet Market']==='null')){
+      r['Wet Market'] = r['merchant_name'] || r['carline_code'] || r['Wet Market'] || '';
+    }
+  }); }catch(_e){}
+  try{ ingest(rows); if(typeof window.__setInvisibleRows==='function') window.__setInvisibleRows(rows); if(typeof runAnalyze==='function') runAnalyze();
+    say('已載入最新檔案：'+latest.name+'（'+rows.length+' 列，'+(latest.modifiedTime||'')+'）'); try{ window.__setDataDate && window.__setDataDate(latest.name, latest.modifiedTime); }catch(_e){} try{ var _ss=document.getElementById('srcStatus'); if(_ss) _ss.textContent='\u5df2\u8f09\u5165 '+rows.length+' \u884c'; }catch(_e){}
+  }catch(e){ say('處理失敗：'+e.message); }
+}
+if(_isXlsx){
+  if(typeof XLSX==='undefined'){ say('Excel 解析元件尚未載入，請稍候重試'); return; }
+  var ab=await dr.arrayBuffer();
+  var wb=XLSX.read(new Uint8Array(ab),{type:'array'});
+  var ws=wb.Sheets[wb.SheetNames[0]];
+  var rows=XLSX.utils.sheet_to_json(ws,{defval:'',raw:false});
+  _finish(rows);
+}else{
+  var text=await dr.text();
+  Papa.parse(text,{header:true,skipEmptyLines:true,complete:function(res){ _finish(res.data); },error:function(err){ say('CSV 解析失敗：'+err.message); }});
+}
+    }catch(e){ say('Drive 載入失敗：'+e.message); }
+  }
+  window.loadFromDriveFolder = loadFromDriveFolder;
+  function wire(){
+    var sel=q('srcMode'), loadBtn=q('loadBtn');
+    if(!loadBtn){ setTimeout(wire,300); return; }
+    if(!q('driveStatus')){ var s=document.createElement('div'); s.id='driveStatus'; s.style.cssText='font-size:11px;color:var(--mut);margin-top:6px'; loadBtn.parentNode.insertBefore(s, loadBtn.nextSibling); }
+    var orig=loadBtn.onclick;
+    loadBtn.onclick=function(ev){ if(sel&&sel.value==='drive'){ if(ev)ev.preventDefault(); loadFromDriveFolder(); return false; } if(typeof orig==='function') return orig.call(this,ev); };
+  }
+  if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', wire);} else { wire(); }
+  /* Auto-load latest Drive file once the app becomes visible after login */
+  (function(){
+    var done=false;
+    function appVisible(){
+      var login=q('login'), app=q('app');
+      var loginHidden = !login || getComputedStyle(login).display==='none' || login.offsetParent===null;
+      var appShown = app && getComputedStyle(app).display!=='none' && app.offsetParent!==null;
+      return loginHidden && appShown;
+    }
+    function tryAuto(){
+      if(done) return;
+      if(appVisible()){
+        done=true;
+        var sel=q('srcMode');
+        if(sel){ sel.value='drive'; }
+        loadFromDriveFolder();
+      }
+    }
+    var obs=new MutationObserver(tryAuto);
+    function startObs(){
+      var login=q('login'), app=q('app');
+      if(login) obs.observe(login,{attributes:true,attributeFilter:['style','class']});
+      if(app) obs.observe(app,{attributes:true,attributeFilter:['style','class']});
+      document.addEventListener('click', function(){ setTimeout(tryAuto, 400); }, true);
+      tryAuto();
+    }
+    if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', startObs);} else { startObs(); }
+  })();
+})();
+</script>
+
+
+<script>
+/* Invisible List: SKU x Wet Market, rate>threshold AND sold>threshold */
+(function(){
+  var CSV_ROWS=null, CURRENT=[], sortKey="rate", sortDir=-1;
+  /* Invisible List: only these stores are included (HKTVPHY code, store name) */
+  window.__IV_STORE_WL=[
+    ["HKTVPHY_00103066","李彬記鮮果店 (堅尼地城)"],
+    ["HKTVPHY_00079215","南興鮮果 (堅尼地城)"],
+    ["HKTVPHY_00079212","李彬記菜檔 (堅尼地城)"],
+    ["HKTVPHY_00077853","新界客家仔 (堅尼地城)"],
+    ["HKTVPHY_00084867","珠記要美蔬菜 (堅尼地城)"],
+    ["HKTVPHY_00077880","梁好菜檔 (堅尼地城)"],
+    ["HKTVPHY_00077526","洪記蔬菜 (堅尼地城)"],
+    ["HKTVPHY_00077859","明輝肉枱 (堅尼地城)"],
+    ["HKTVPHY_00101416","阿妹新鮮豬 (堅尼地城)"],
+    ["HKTVPHY_00077793","香港家豬 (堅尼地城)"],
+    ["HKTVPHY_00083134","您想生活 (鮮果) (灣仔)"],
+    ["HKTVPHY_00083143","茵記水果 (灣仔)"],
+    ["HKTVPHY_00083095","蔬菜26發 (灣仔)"],
+    ["HKTVPHY_00089278","茵記蔬菜 (灣仔)"],
+    ["HKTVPHY_00083092","家匯蔬菜 (灣仔)"],
+    ["HKTVPHY_00082699","實惠冰鮮 (灣仔)"],
+    ["HKTVPHY_00083107","新生肉食本地豬 (灣仔)"],
+    ["HKTVPHY_00083149","興和豬肉 (灣仔)"],
+    ["HKTVPHY_00077835","阿妹新鮮豬 (灣仔)"],
+    ["HKTVPHY_00077814","香港家豬 (灣仔)"],
+    ["HKTVPHY_00083110","民生黑毛豬 (灣仔)"],
+    ["HKTVPHY_00087592","迓記鮮菓 (尚德)"],
+    ["HKTVPHY_00078153","JC Fruit (尚德)"],
+    ["HKTVPHY_00078126","榮興蔬菜 (將軍澳)"],
+    ["HKTVPHY_00078120","小肥優惠菜檔 (將軍澳)"],
+    ["HKTVPHY_00087472","榮發蔬菜 (尚德)"],
+    ["HKTVPHY_00087484","合興隆 (富康)"],
+    ["HKTVPHY_00087481","本地豚 (尚德)"],
+    ["HKTVPHY_00087487","筋肉人冰鮮 (尚德)"],
+    ["HKTVPHY_00078144","容記蔬菜 (大埔墟)"],
+    ["HKTVPHY_00088237","合成行蔬菜 (大埔墟)"],
+    ["HKTVPHY_00078273","緣記 (大埔墟)"],
+    ["HKTVPHY_00078192","達興蔬菜 (大埔墟)"],
+    ["HKTVPHY_00081426","群記時菜 (大埔墟)"],
+    ["HKTVPHY_00087574","卿記菜檔 (大埔墟)"],
+    ["HKTVPHY_00084819","田園鮮菜 (大埔墟)"],
+    ["HKTVPHY_00078240","特好肉食公司 (大埔墟)"],
+    ["HKTVPHY_00080918","品鮮黑豬專門店 (大埔墟)"],
+    ["HKTVPHY_00078219","森源黑豚豬(大埔墟)"],
+    ["HKTVPHY_00082508","德聯冷鮮肉專門店 (大埔墟)"],
+    ["HKTVPHY_00114143","廣昌農場鮮肉 (大埔墟)"],
+    ["HKTVPHY_00106141","冠豐農場 (大埔墟)"],
+    ["HKTVPHY_00078132","錦鑫鮮果 (大埔墟)"],
+    ["HKTVPHY_00078216","金利菓菜公司 (大埔墟)"],
+    ["HKTVPHY_00081579","同興鮮果 (大埔)"],
+    ["HKTVPHY_00084621","元朗嫂食品 (荃灣)"],
+    ["HKTVPHY_00084618","原味優質食品 (荃灣)"],
+    ["HKTVPHY_00078387","雅惠環球鮮果 (荃灣)"],
+    ["HKTVPHY_00078492","何記菜檔 (荃灣)"],
+    ["HKTVPHY_00079110","富潤 (荃灣)"],
+    ["HKTVPHY_00078408","順昌隆肉檔 (荃灣)"],
+    ["HKTVPHY_00078504","新界仔優質果菜 (荃灣)"],
+    ["HKTVPHY_00078585","雄利鮮果 (荃灣)"],
+    ["HKTVPHY_00078651","玉記菜檔 (荃灣)"],
+    ["HKTVPHY_00078432","玉記 (荃灣)"],
+    ["HKTVPHY_00078657","葵記 (荃灣)"],
+    ["HKTVPHY_00082370","金昇生菓 (荃灣)"],
+    ["HKTVPHY_00111545","海寶鮮肉 (荃灣)"],
+    ["HKTVPHY_00078318","順興 (元朗)"],
+    ["HKTVPHY_00078360","發辦湯水 (元朗)"],
+    ["HKTVPHY_00087469","珍記蔬菜 (元朗)"],
+    ["HKTVPHY_00113192","其興隆港鮮食品 (元朗)"],
+    ["HKTVPHY_00078372","百吉新鮮豬肉 (元朗)"],
+    ["HKTVPHY_00078357","南記肉枱 (元朗)"],
+    ["HKTVPHY_00078354","佑記豬 (元朗)"],
+    ["HKTVPHY_00078330","煈騸牯牛肉 (元朗)"],
+    ["HKTVPHY_00106372","狂牛賤賣場 (元朗)"],
+    ["HKTVPHY_00082089","德聯冰鮮肉 (元朗)"],
+    ["HKTVPHY_00082086","榮興鮮牛 (元朗)"],
+    ["HKTVPHY_00078342","鴻記靚生果 (元朗)"],
+    ["HKTVPHY_00084441","新都鮮果 (元朗)"],
+    ["HKTVPHY_00078429","菜菜芓 (九龍城)"],
+    ["HKTVPHY_00079918","摯誠市集 (九龍城)"],
+    ["HKTVPHY_00082059","發記蔬菜 (九龍城)"],
+    ["HKTVPHY_00084396","培記蔬菜 (九龍城)"],
+    ["HKTVPHY_00083272","聯發菜檔 (九龍城)"],
+    ["HKTVPHY_00087580","嬌姐菜檔 (九龍城)"],
+    ["HKTVPHY_00113135","紅記湯料涼茶 (九龍城)"],
+    ["HKTVPHY_00078549","榕記豬肉 (九龍城)"],
+    ["HKTVPHY_00078390","新興肉食(豬肉) (九龍城)"],
+    ["HKTVPHY_00079650","榮記鮮菓 (九龍城)"],
+    ["HKTVPHY_00078411","祥盛水果 (九龍城)"],
+    ["HKTVPHY_00077508","祥盛蔬菜 (九龍城)"],
+    ["HKTVPHY_00093391","肥蟹貓山王 (九龍城)"],
+    ["HKTVPHY_00078501","永富食品公司 (九龍城)"],
+    ["HKTVPHY_00109780","林景水果 (九龍城)"],
+    ["HKTVPHY_00089203","66鮮菓店 (九龍城)"],
+    ["HKTVPHY_00083535","李輝記牛欄 (九龍城)"],
+    ["HKTVPHY_00086932","農田菜 (保安道)"],
+    ["HKTVPHY_00087454","大福菜檔 (保安道)"],
+    ["HKTVPHY_00087445","惠芳菜檔 (保安道)"],
+    ["HKTVPHY_00086935","華仔本地菜 (保安道)"],
+    ["HKTVPHY_00089272","林記菜檔 (保安道)"],
+    ["HKTVPHY_00089296","德記山草藥 (保安道)"],
+    ["HKTVPHY_00113162","匯農惠 (保安道)"],
+    ["HKTVPHY_00086920","本地豚 (保安道)"],
+    ["HKTVPHY_00086923","順華豬肉 (保安道)"],
+    ["HKTVPHY_00086926","永隆豬肉 (保安道)"],
+    ["HKTVPHY_00114122","日日鮮肉行 (保安道)"],
+    ["HKTVPHY_00086938","宏發水果 (保安道)"],
+    ["HKTVPHY_00114472","周記環球水果 (保安道)"],
+    ["HKTVPHY_00086968","周記環球蔬果 (保安道)"],
+    ["HKTVPHY_00116149","平姐生果檔 (保安道)"],
+    ["HKTVPHY_00077586","肥媽蔬菜 (屯門)"],
+    ["HKTVPHY_00088234","安田農產品 (屯門)"],
+    ["HKTVPHY_00089209","五穀豐登 (屯門)"],
+    ["HKTVPHY_00084717","金記蔬菜 (屯門)"],
+    ["HKTVPHY_00077637","賴偉記 (屯門)"],
+    ["HKTVPHY_00077589","榮興 (屯門)"],
+    ["HKTVPHY_00077622","英記 (屯門)"],
+    ["HKTVPHY_00077592","寶記 (屯門)"],
+    ["HKTVPHY_00077673","243草藥堂 (屯門)"],
+    ["HKTVPHY_00112799","金記水果 (屯門)"],
+    ["HKTVPHY_00077655","最鮮到 (屯門)"],
+    ["HKTVPHY_00077643","榮發豬肉 (屯門)"],
+    ["HKTVPHY_00077616","燦洪豬肉 (屯門)"],
+    ["HKTVPHY_00087583","永興黑毛豬 (屯門)"],
+    ["HKTVPHY_00084834","元興肉枱(黑毛豬) (屯門)"],
+    ["HKTVPHY_00080608","惠里豚 (屯門)"],
+    ["HKTVPHY_00113105","黃元興(屯門)"]
+  ];
+  window.__IV_WL_KEY=function(v){ return String(v==null?"":v).replace(/\s+/g,"").replace(/（/g,"(").replace(/）/g,")"); };
+  window.__IV_WL_SET=(function(){ var o={}; for(var i=0;i<window.__IV_STORE_WL.length;i++){ o[window.__IV_WL_KEY(window.__IV_STORE_WL[i][1])]=1; } return o; })();
+  window.__IV_IN_WHITELIST=function(name){ return !!window.__IV_WL_SET[window.__IV_WL_KEY(name)]; };
+  // 隱形清單：只包含以下 SKU 代碼開頭的貨品（門店白名單 __IV_STORE_WL 保留備用，現時不生效）
+  window.__IV_SKU_ALLOW_PREFIX=["65019","65022","63744","69435","63771","63417","63750","63684","68167","68176","68128","72622","68125","67825","68140","68182","63705","68143","71431","64038","64011","64005","71326","71338","71335","71341","64029","71878","64158","64077","66846","71413","69387","64125","66413","64104","67679","80882","76960","64017","64101","66960","69249","69246","64272","64377","64929","64293","64470","64536","64317","64542","67559","79568","64203","64245","71323","80420","64257","64242","64239","64215","77086","67344","67341","64227","69120","70912","71308","71302","70915","72616","72640","80408","70900","70903","70906","80870","70918","70948","63477","71875","72562","69321","63528","63480","63513","63483","63564","63546","63534","63507","71422","69402","66154","63726","64389","64314","65635","67314","69093","68272","71419","80387","64434","64275","65397","64296","63399","73342","64386","78712","72559","68505","82033","80369"];
+  window.__IV_SKU_ALLOW_SET=(function(){ var o={}; for(var i=0;i<window.__IV_SKU_ALLOW_PREFIX.length;i++){ o[window.__IV_SKU_ALLOW_PREFIX[i]]=1; } return o; })();
+  window.__IV_SKU_ALLOWED=function(sku){ var s=String(sku==null?"":sku).trim(); if(!s) return false; if(window.__IV_SKU_ALLOW_SET[s.split("_")[0]]) return true; if(window.__IV_SKU_ALLOW_SET[s.slice(0,5)]) return true; return false; };
+  function q(id){ return document.getElementById(id); }
+  function num(v){ var n=parseFloat(String(v==null?"":v).replace(/[^0-9.\-]/g,"")); return isNaN(n)?0:n; }
+  function esc(s){ return String(s==null?"":s).replace(/[&<>\"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];}); }
+  function setRows(rows){ CSV_ROWS=rows; render(); }
+  window.__setInvisibleRows=setRows;
+  function compute(){
+    if(!CSV_ROWS) return [];
+    var m={};
+    for(var i=0;i<CSV_ROWS.length;i++){
+      var row=CSV_ROWS[i]; var sku=row["sku_id"], wm=row["Store_Name"]; if(window.__IS_FULLY_CANCELLED&&window.__IS_FULLY_CANCELLED(row))continue; if(window.__EXCL_REASON&&window.__EXCL_REASON(row["sku_cancel_reason"],row["sku_cs_refund_reason"],row["REFUND_REPORT_CANCEL_reason"]))continue; var _store=(row["Wet_Market"]||row["merchant_name"]||wm); if(window.only3P && window.only3P() && window.is1P && window.is1P(_store)) continue; if(window.__IV_SKU_ALLOWED && !window.__IV_SKU_ALLOWED(sku)) continue;
+      if(!sku||!wm) continue;
+      var k=sku+"||"+wm;
+      if(!m[k]) m[k]={sku_id:sku, sku_name:row["sku_name_chi"]||"", wet_market:wm, sold:0, cancel:0};
+      if(_store && String(m[k].store_name||"").indexOf(_store)===-1){ m[k].store_name = (m[k].store_name?m[k].store_name+", ":"")+_store; }
+      m[k].sold+=num(row["quantity"]);
+      if(!(window.__NO_CANCEL_COUNT && window.__NO_CANCEL_COUNT(row["sku_cancel_reason"],row["sku_cs_refund_reason"],row["REFUND_REPORT_CANCEL_reason"]))) m[k].cancel+=num(row["refund_quantity"]);
+    }
+    var list=[]; for(var kk in m){ var o=m[kk]; o.rate=o.sold>0?(o.cancel/o.sold*100):0; list.push(o);} return list;
+  }
+  function render(){
+    var rateTh=num((q("ivRate")||{}).value)||0, soldTh=num((q("ivSold")||{}).value)||0;
+    var list=compute().filter(function(o){ return o.rate>rateTh && o.sold>soldTh; });
+    var mkSel=q("ivMarket"), mkVal=mkSel?mkSel.value:"";
+    if(mkSel){ var mnames={}; for(var mi=0;mi<list.length;mi++){ var mn=list[mi].wet_market||""; if(mn) mnames[mn]=1; }
+      var mkeys=Object.keys(mnames).sort(function(a,b){ return String(a).localeCompare(String(b)); });
+      var msig=mkeys.join("|");
+      if(mkSel.getAttribute("data-sig")!==msig){ mkSel.setAttribute("data-sig", msig);
+        var mopt='<option value="">\u5168\u90e8\u8857\u5e02</option>';
+        for(var mj=0;mj<mkeys.length;mj++){ mopt+='<option value="'+esc(mkeys[mj])+'">'+esc(mkeys[mj])+'</option>'; }
+        mkSel.innerHTML=mopt;
+        if(mkeys.indexOf(mkVal)>=0){ mkSel.value=mkVal; } else { mkSel.value=""; mkVal=""; }
+      }
+      if(mkVal && mkeys.indexOf(mkVal)<0){ mkSel.value=""; mkVal=""; }
+    }
+    if(mkVal){ list=list.filter(function(o){ return (o.wet_market||"")===mkVal; }); }
+    var stSel=q("ivStore"), stVal=stSel?stSel.value:"";
+    if(stSel){ var snames={}; for(var si=0;si<list.length;si++){ var sn=list[si].store_name||""; if(sn) snames[sn]=1; }
+      var skeys=Object.keys(snames).sort(function(a,b){ return String(a).localeCompare(String(b)); });
+      var ssig=skeys.join("|");
+      if(stSel.getAttribute("data-sig")!==ssig){ stSel.setAttribute("data-sig", ssig);
+        var sopt='<option value="">\u5168\u90e8\u5e97\u8216</option>';
+        for(var sj=0;sj<skeys.length;sj++){ sopt+='<option value="'+esc(skeys[sj])+'">'+esc(skeys[sj])+'</option>'; }
+        stSel.innerHTML=sopt;
+        if(skeys.indexOf(stVal)>=0){ stSel.value=stVal; } else { stSel.value=""; stVal=""; }
+      }
+      if(stVal && skeys.indexOf(stVal)<0){ stSel.value=""; stVal=""; }
+    }
+    if(stVal){ list=list.filter(function(o){ return (o.store_name||"")===stVal; }); }
+    var SMODE=(q("ivSortMode")&&q("ivSortMode").value)||"rate";
+    list.sort(function(a,b){ if(SMODE==="market"){ var wa=String(a.wet_market||""), wb=String(b.wet_market||""); if(wa!==wb) return wa.localeCompare(wb); }
+      var av=a[sortKey], bv=b[sortKey]; if(typeof av==="string"){ return sortDir*String(av).localeCompare(String(bv)); } return sortDir*((av||0)-(bv||0)); });
+    CURRENT=list; window.__IV_CURRENT=list;
+    var body=q("ivBody"); if(!body) return; var html="";
+    var GRP=(q("ivGroupStore")&&q("ivGroupStore").checked), GMETA={}, GORDER=[], GSEEN={}, MMETA={}, MORDER=[], MSEEN={};
+    if(GRP){
+      for(var gi=0;gi<list.length;gi++){ var go=list[gi], mkk=(go.wet_market||""), gk=mkk+"||"+(go.store_name||"");
+        if(!MMETA[mkk]){ MMETA[mkk]={key:mkk, wet_market:mkk, n:0, sold:0, cancel:0, stores:{}, nstore:0, skus:[]}; MORDER.push(MMETA[mkk]); }
+        var mm=MMETA[mkk]; mm.n++; mm.sold+=(go.sold||0); mm.cancel+=(go.cancel||0); mm.skus.push(go.sku_id);
+        if(!mm.stores[go.store_name||""]){ mm.stores[go.store_name||""]=1; mm.nstore++; }
+        if(!GMETA[gk]){ GMETA[gk]={key:gk, wet_market:mkk, store_name:go.store_name||"", n:0, sold:0, cancel:0, skus:[]}; GORDER.push(GMETA[gk]); }
+        var gm=GMETA[gk]; gm.n++; gm.sold+=(go.sold||0); gm.cancel+=(go.cancel||0); gm.skus.push(go.sku_id);
+      }
+      for(var gz=0;gz<GORDER.length;gz++){ GORDER[gz].rate=GORDER[gz].sold>0?(GORDER[gz].cancel/GORDER[gz].sold*100):0; }
+      for(var mz=0;mz<MORDER.length;mz++){ MORDER[mz].rate=MORDER[mz].sold>0?(MORDER[mz].cancel/MORDER[mz].sold*100):0; }
+      if(SMODE==="market"){ MORDER.sort(function(a,b){ return String(a.key||"").localeCompare(String(b.key||"")); }); }
+      else { MORDER.sort(function(a,b){ return (b.rate||0)-(a.rate||0); }); }
+      var MRANK={}; for(var mr=0;mr<MORDER.length;mr++){ MRANK[MORDER[mr].key]=mr; }
+      GORDER.sort(function(a,b){ var ra=MRANK[a.wet_market], rb=MRANK[b.wet_market]; if(ra!==rb) return ra-rb; return (b.rate||0)-(a.rate||0); });
+      var glist=[];
+      for(var gy=0;gy<GORDER.length;gy++){ for(var gx=0;gx<list.length;gx++){ if(((list[gx].wet_market||"")+"||"+(list[gx].store_name||""))===GORDER[gy].key) glist.push(list[gx]); } }
+      list=glist;
+    }
+    for(var i=0;i<list.length;i++){ var o=list[i];
+      if(GRP){ var mk2=(o.wet_market||""), ck=mk2+"||"+(o.store_name||"");
+        if(!MSEEN[mk2]){ MSEEN[mk2]=1; var mm2=MMETA[mk2];
+          html+="<tr class=\"ivMktRow\" style=\"background:var(--line)\"><td style=\"text-align:center\"><input type=\"checkbox\" class=\"ivGrpChk\" data-skus=\""+esc(mm2.skus.join(","))+"\"></td><td colspan=\"20\" style=\"font-weight:700;color:var(--grn);padding:7px 4px\">"+esc(mm2.wet_market||"(\u672a\u77e5\u8857\u5e02)")+" <span style=\"color:var(--mut);font-weight:400\">\u00b7 "+mm2.nstore+" \u5e97\u8216 \u00b7 "+mm2.n+" SKU \u00b7 \u51fa\u552e "+mm2.sold+" \u00b7 \u53d6\u6d88 "+mm2.cancel+" \u00b7 \u53d6\u6d88\u7387 "+mm2.rate.toFixed(2)+"%</span></td></tr>";
+        }
+        if(!GSEEN[ck]){ GSEEN[ck]=1; var gm2=GMETA[ck];
+          html+="<tr class=\"ivGrpRow\" style=\"background:var(--panel2)\"><td style=\"text-align:center\"><input type=\"checkbox\" class=\"ivGrpChk\" data-skus=\""+esc(gm2.skus.join(","))+"\"></td><td colspan=\"20\" style=\"font-weight:600;color:var(--acc);padding:6px 4px 6px 24px\">\u21b3 "+esc(gm2.store_name||"(\u672a\u77e5\u5e97\u8216)")+" <span style=\"color:var(--mut);font-weight:400\">\u00b7 "+gm2.n+" SKU \u00b7 \u51fa\u552e "+gm2.sold+" \u00b7 \u53d6\u6d88 "+gm2.cancel+" \u00b7 \u53d6\u6d88\u7387 "+gm2.rate.toFixed(2)+"%</span></td></tr>";
+        }
+      }
+      html+="<tr><td style=\"text-align:center\"><input type=\"checkbox\" class=\"ivChk\" data-sku=\""+esc(o.sku_id)+"\"></td><td>"+esc(o.wet_market)+"\x3c/td\x3e\x3ctd\x3e"+esc(o.store_name||"")+"</td><td>"+esc(o.sku_id)+"</td><td>"+esc(o.sku_name)+"</td><td style=\"text-align:right\">"+o.sold+"</td><td style=\"text-align:right\">"+o.cancel+" <button type=\"button\" class=\"ivRawOne\" data-sku=\""+esc(o.sku_id)+"\" data-wm=\""+esc(o.wet_market||"")+"\" title=\"\u532f\u51fa\u6b64 SKU \u00d7 \u8857\u5e02\u7684\u53d6\u6d88 order entry\" style=\"background:transparent;border:1px solid var(--line);color:var(--mut);border-radius:4px;font-size:10px;line-height:14px;padding:0 5px;cursor:pointer;margin-left:6px\">\u539f\u59cb</button></td><td style=\"text-align:right;"+(o.rate>=5?"color:var(--red);font-weight:600":(o.rate>=2?"color:var(--acc);font-weight:600":""))+"\">"+o.rate.toFixed(2)+"%</td><td class=\"ivStatus\" data-sku=\""+esc(o.sku_id)+"\" style=\"text-align:center;color:var(--mut)\">-</td></tr>";
+    }
+    body.innerHTML=html||("<tr><td colspan=\"10\" style=\"color:var(--mut);padding:10px\">no items (rate > "+rateTh+"% and sold > "+soldTh+")</td></tr>");
+    var info=q("ivInfo"); if(info){ info.textContent="Matched: "+list.length+" items (rate > "+rateTh+"%, sold > "+soldTh+")"+(mkVal?(" \u00b7 \u8857\u5e02: "+mkVal):"")+(stVal?(" \u00b7 \u5e97\u8216: "+stVal):""); }
+    if(window.__ivUpdateSelCount) window.__ivUpdateSelCount();
+  }
+  function exportRawCsv(opts){
+      var ONE=(opts&&opts.sku)?{sku:String(opts.sku),wm:String(opts.wm==null?"":opts.wm)}:null;
+      if(!CSV_ROWS || !CSV_ROWS.length){ alert("\u5c1a\u672a\u8f09\u5165\u539f\u59cb\u8cc7\u6599"); return; }
+      var onlyTable=!!(q("ivExpOnlyTable") && q("ivExpOnlyTable").checked); if(ONE) onlyTable=false;
+      var keys={}, nk=0;
+      (CURRENT||[]).forEach(function(o){ var kk=String(o.sku_id)+"||"+String(o.wet_market); if(!keys[kk]){ keys[kk]=1; nk++; } });
+      if(onlyTable && !nk){ alert("\u8868\u5185\u6c92\u6709 SKU\uff0c\u8acb\u5148\u653e\u5bec\u689d\u4ef6"); return; }
+      var mkSel=q("ivMarket"), mkVal=mkSel?String(mkSel.value||""):"";
+      var stSel=q("ivStore"), stVal=stSel?String(stSel.value||""):""; if(ONE){ mkVal=""; stVal=""; }
+      var cols=[], cseen={};
+      for(var ci=0;ci<CSV_ROWS.length && ci<50;ci++){ for(var ck in CSV_ROWS[ci]){ if(!cseen[ck]){ cseen[ck]=1; cols.push(ck); } } }
+      var out=[["__raw_row"].concat(cols)], nrow=0, qty=0, pairs={}, npair=0;
+      for(var i=0;i<CSV_ROWS.length;i++){
+        var row=CSV_ROWS[i]; var sku=row["sku_id"], wm=row["Store_Name"];
+        if(!sku||!wm) continue;
+        if(onlyTable && !keys[String(sku)+"||"+String(wm)]) continue;
+        if(ONE && (String(sku)!==ONE.sku || String(wm)!==ONE.wm)) continue;
+        if(window.__IS_FULLY_CANCELLED && window.__IS_FULLY_CANCELLED(row)) continue;
+        if(mkVal && String(wm)!==mkVal) continue;
+        if(window.__EXCL_REASON && window.__EXCL_REASON(row["sku_cancel_reason"],row["sku_cs_refund_reason"],row["REFUND_REPORT_CANCEL_reason"])) continue;
+        var _store=(row["Wet_Market"]||row["merchant_name"]||wm);
+        if(window.only3P && window.only3P() && window.is1P && window.is1P(_store)) continue;
+        if(window.__IV_SKU_ALLOWED && !window.__IV_SKU_ALLOWED(sku)) continue;
+        if(stVal && String(stVal).indexOf(String(_store))===-1) continue;
+        var cr=String(row["sku_cancel_reason"]==null?"":row["sku_cancel_reason"]).trim();
+        if(!cr || cr.toLowerCase()==="null") continue;
+        if(window.__NO_CANCEL_COUNT && window.__NO_CANCEL_COUNT(row["sku_cancel_reason"],row["sku_cs_refund_reason"],row["REFUND_REPORT_CANCEL_reason"])) continue;
+        var rq=num(row["refund_quantity"]); if(rq<=0) continue;
+        var line=[i+2]; for(var cj=0;cj<cols.length;cj++){ var _cn=cols[cj], _cv=row[_cn]; if(_cn==="order_entry_id" && /[eE]\+/.test(String(_cv))){ var _ea=String(row["order_entry_id_A"]==null?"":row["order_entry_id_A"]).trim(), _eb=String(row["order_entry_id_B"]==null?"":row["order_entry_id_B"]).trim(); if(_ea && _eb) _cv=_ea+_eb; } line.push(_cv); }
+        out.push(line); nrow++; qty+=rq;
+        var pk=String(sku)+"||"+String(wm); if(!pairs[pk]){ pairs[pk]=1; npair++; }
+      }
+      if(nrow===0){ alert("\u6c92\u6709\u53ef\u532f\u51fa\u7684\u53d6\u6d88\u8a18\u9304"); return; }
+      var csv=out.map(function(r){ return r.map(function(v){ v=String(v==null?"":v); return /[",\n\r]/.test(v)?("\""+v.replace(/"/g,"\"\"")+"\""):v; }).join(","); }).join(String.fromCharCode(10));
+      var blob=new Blob([String.fromCharCode(0xFEFF)+csv],{type:"text/csv;charset=utf-8;"});
+      var a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=(ONE?("invisible_raw_"+String(ONE.sku).replace(/[^A-Za-z0-9._-]/g,"_")+".csv"):"invisible_raw_cancel.csv"); document.body.appendChild(a); a.click(); a.remove();
+      var inf=q("ivInfo"); if(inf){ inf.textContent="\u5df2\u532f\u51fa "+nrow+" \u884c\u539f\u59cb\u53d6\u6d88\u8a18\u9304\uff08\u5171 "+qty+" \u4ef6\uff0c"+npair+" \u500b SKU \u00d7 \u8857\u5e02\uff1b\u7bc4\u570d\uff1a"+(onlyTable?"\u8868\u5185 SKU":"\u5168\u90e8\u767d\u540d\u55ae SKU")+"\uff09"; }
+    }
+    function exportCsv(){
+    var rows=[["Wet Market","Store","SKU ID","SKU Name","Sold","Cancel","Rate %"]];
+    CURRENT.forEach(function(o){ rows.push([o.wet_market,o.store_name,o.sku_id,o.sku_name,o.sold,o.cancel,o.rate.toFixed(2)]); });
+    var csv=rows.map(function(r){ return r.map(function(v){ v=String(v==null?"":v); return /[\",\n]/.test(v)?("\""+v.replace(/\"/g,"\"\"")+"\""):v; }).join(","); }).join(String.fromCharCode(10));
+    var blob=new Blob([String.fromCharCode(0xFEFF)+csv],{type:"text/csv;charset=utf-8;"});
+    var a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="invisible_list.csv"; document.body.appendChild(a); a.click(); a.remove();
+  }
+  function switchToInvisible(){
+    document.querySelectorAll(".tab").forEach(function(el){ el.classList.toggle("on", el.dataset.tab==="invisible"); });
+    ["main","detail","invisible"].forEach(function(name){ var p=q("tab-"+name); if(p) p.style.display=(name==="invisible")?"block":"none"; });
+    render();
+  }
+  function wireTabs(){
+    var invTab=document.querySelector(".tab[data-tab=\"invisible\"]");
+    if(!invTab){ setTimeout(wireTabs,300); return; }
+    invTab.addEventListener("click", switchToInvisible);
+    document.querySelectorAll(".tab").forEach(function(el){ if(el.dataset.tab!=="invisible"){ el.addEventListener("click", function(){ var p=q("tab-invisible"); if(p) p.style.display="none"; }); } });
+    var ap=q("ivApply"); if(ap) ap.addEventListener("click", render);
+    var ex=q("ivExp"); if(ex) ex.addEventListener("click", exportCsv); var exr=q("ivExpRaw"); if(exr) exr.addEventListener("click", function(){ exportRawCsv(); });
+      var _ivb=q("ivBody"); if(_ivb){ _ivb.addEventListener("click", function(ev){ var t=ev.target; if(t && t.className && String(t.className).indexOf("ivRawOne")>=0){ ev.preventDefault(); ev.stopPropagation(); exportRawCsv({sku:t.getAttribute("data-sku"), wm:t.getAttribute("data-wm")}); } }); }
+      var gsb=q("ivGroupStore"); if(gsb){ gsb.addEventListener("change", function(){ render(); }); }
+      var stb=q("ivStore"); if(stb){ stb.addEventListener("change", function(){ render(); }); }
+      var mkb=q("ivMarket"); if(mkb){ mkb.addEventListener("change", function(){ render(); }); }
+      var smb=q("ivSortMode"); if(smb){ smb.addEventListener("change", function(){ render(); }); }
+      var selAll=q("ivSelAll"); if(selAll){ selAll.addEventListener("change",function(){ var on=selAll.checked; document.querySelectorAll("#ivBody .ivChk").forEach(function(c){ c.checked=on; }); if(window.__ivUpdateSelCount) window.__ivUpdateSelCount(); }); }
+      function getSelectedSkus(){ var out=[]; document.querySelectorAll("#ivBody .ivChk").forEach(function(c){ if(c.checked){ out.push(c.getAttribute("data-sku")); } }); return out; }
+      function updateSelCount(){ var n=getSelectedSkus().length, tot=document.querySelectorAll("#ivBody .ivChk").length;
+        var el=q("ivSelInfo"); if(el){ el.textContent="已選 "+n+" 個 SKU（共 "+tot+" 個）"; el.style.color=n?"var(--acc)":"var(--mut)"; }
+        var bs=q("ivSetInvisible"); if(bs){ bs.textContent=n?("設為Invisible (已選 "+n+")"):"設為Invisible (已選)"; }
+        var bc=q("ivCancelSched"); if(bc){ bc.textContent=n?("取消排程 (已選 "+n+")"):"取消排程 (已選)"; }
+        var sa=q("ivSelAll"); if(sa){ sa.checked=(tot>0&&n===tot); sa.indeterminate=(n>0&&n<tot); }
+        var gcs=document.querySelectorAll("#ivBody .ivGrpChk");
+        for(var gq=0;gq<gcs.length;gq++){ var sks=(gcs[gq].getAttribute("data-skus")||"").split(","), c1=0, t1=0;
+          for(var gr=0;gr<sks.length;gr++){ if(!sks[gr]) continue; var cb1=document.querySelector('#ivBody .ivChk[data-sku="'+sks[gr]+'"]'); if(cb1){ t1++; if(cb1.checked) c1++; } }
+          gcs[gq].checked=(t1>0&&c1===t1); gcs[gq].indeterminate=(c1>0&&c1<t1);
+        }
+      }
+      window.__ivUpdateSelCount=updateSelCount;
+      var ivbody=q("ivBody"); if(ivbody){ ivbody.addEventListener("change",function(e){ var el=e.target; if(!el||!el.classList) return;
+        if(el.classList.contains("ivGrpChk")){ var sk=(el.getAttribute("data-skus")||"").split(",");
+          for(var gi=0;gi<sk.length;gi++){ if(!sk[gi]) continue; var cb=ivbody.querySelector('.ivChk[data-sku="'+sk[gi]+'"]'); if(cb) cb.checked=el.checked; }
+          updateSelCount(); return; }
+        if(el.classList.contains("ivChk")) updateSelCount(); }); }
+      var canSch=q("ivCancelSched"); if(canSch){ canSch.addEventListener("click",function(){ var sel=getSelectedSkus(); if(!sel.length){ alert("未選擇 SKU。"); return; } if(typeof window.__ivCancelSchedAction==="function"){ window.__ivCancelSchedAction(sel); } else { alert("Invisible 功能未啟用。"); } }); }
+      var setInv=q("ivSetInvisible"); if(setInv){ setInv.addEventListener("click",function(){ var sel=getSelectedSkus(); if(!sel.length){ alert("No SKU selected."); return; } if(typeof window.__ivSetInvisibleAction==="function"){ window.__ivSetInvisibleAction(sel); } else { alert("Selected "+sel.length+" SKU(s):\n"+sel.join(", ")+"\n\n(Action not yet configured.)"); } }); }
+      var fetchBtn=q("ivFetchStatus"); if(fetchBtn){ fetchBtn.addEventListener("click",function(){ var skus=(window.__IV_CURRENT||[]).map(function(o){return o.sku_id;}); if(!skus.length){ alert("No SKU to query. Generate the Invisible List first."); return; } var info=q("ivInfo"); if(info){ info.textContent="Fetching Customer App status for "+skus.length+" SKU(s)..."; } document.querySelectorAll("#ivBody .ivStatus").forEach(function(td){ td.textContent="\u67e5\u8a62\u4e2d\u2026"; td.style.color="var(--muted)"; }); if(!window.SUPABASE_URL || !window.SUPABASE_ANON_KEY || window.SUPABASE_ANON_KEY.indexOf("__")===0){ if(info){info.textContent="Supabase key not configured. Set window.SUPABASE_ANON_KEY.";} return; } var uniq=Array.from(new Set(skus.filter(Boolean))); var CHUNK=200; var chunks=[]; for(var i=0;i<uniq.length;i+=CHUNK){ chunks.push(uniq.slice(i,i+CHUNK)); } var statusMap={}; Promise.all(chunks.map(function(ch){   var inList=ch.map(function(s){ return "\""+String(s).replace(/"/g,"")+"\""; }).join(",");   var url=window.SUPABASE_URL.replace(/\/$/,"")+"/rest/v1/cms_3p_sku?select=cms_sku,cms_online,cms_visible&cms_sku=in.("+encodeURIComponent(inList)+")";   return fetch(url,{headers:{apikey:window.SUPABASE_ANON_KEY,Authorization:"Bearer "+window.SUPABASE_ANON_KEY}}).then(function(r){ if(!r.ok){ throw new Error("HTTP "+r.status); } return r.json(); }).then(function(rows){ (rows||[]).forEach(function(row){ statusMap[row.cms_sku]=row.cms_visible; }); }); })).then(function(){   var painted={}; var hit=0;   skus.forEach(function(s){ if(statusMap.hasOwnProperty(s)){ painted[s]=statusMap[s]; hit++; } });   if(window.__ivSetStatus){ window.__ivSetStatus(painted); }   if(info){ info.textContent="Customer App status: "+hit+" / "+skus.length+" SKU(s) matched."; } }).catch(function(e){   if(info){ info.textContent="Status query failed: "+e.message; }   document.querySelectorAll("#ivBody .ivStatus").forEach(function(td){ td.textContent="\u2014"; td.style.color="var(--muted)"; }); });}); }
+      window.__ivGetSkus=function(){ return (window.__IV_CURRENT||[]).map(function(o){return o.sku_id;}); };
+      window.__ivSetStatus=function(map){ document.querySelectorAll("#ivBody .ivStatus").forEach(function(td){ var sku=td.getAttribute("data-sku"); if(map && map.hasOwnProperty(sku)){ var v=map[sku]; if(v===true||v==="Y"||v==="on"){ td.textContent="ON"; td.style.color="var(--acc)"; } else if(v===false||v==="N"||v==="off"){ td.textContent="OFF"; td.style.color="var(--red)"; } else { td.textContent=String(v); td.style.color="var(--mut)"; } } }); 
+  try {
+    var __missing = [];
+    document.querySelectorAll('#ivBody .ivStatus').forEach(function(td){
+      var s = td.getAttribute('data-sku');
+      if (s && !(map && Object.prototype.hasOwnProperty.call(map, s))) { __missing.push(s); }
+    });
+    if (__missing.length && window.SUPABASE_URL && window.SUPABASE_ANON_KEY) {
+      var __seen = {}; var __rows = [];
+      __missing.forEach(function(s){ if(!__seen[s]){ __seen[s]=1; __rows.push({cms_sku:s}); } });
+      var __ep = window.SUPABASE_URL + '/rest/v1/' + 'scan_queue';
+      fetch(__ep, {
+        method: 'POST',
+        headers: {
+          'apikey': window.SUPABASE_ANON_KEY,
+          'Authorization': 'Bearer ' + window.SUPABASE_ANON_KEY,
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=ignore-duplicates,return=minimal'
+        },
+        body: JSON.stringify(__rows)
+      }).then(function(r){ if(window.console) console.log('[scan_queue] enqueued', __rows.length, 'status', r.status); })
+        .catch(function(e){ if(window.console) console.warn('[scan_queue] enqueue failed', e); });
+      document.querySelectorAll('#ivBody .ivStatus').forEach(function(td){
+        var s = td.getAttribute('data-sku');
+        if (s && __seen[s]) { td.textContent = '\u5f85\u6383\u63cf'; td.style.color = 'var(--muted)'; }
+      });
+    }
+  } catch(__e) { if(window.console) console.warn('[scan_queue] err', __e); }
+};
+    ["ivRate","ivSold"].forEach(function(id){ var el=q(id); if(el) el.addEventListener("keydown", function(e){ if(e.key==="Enter") render(); }); });
+    document.querySelectorAll("#ivTable th[data-sort]").forEach(function(th){ th.addEventListener("click", function(){ var k=th.getAttribute("data-sort"); if(sortKey===k) sortDir=-sortDir; else { sortKey=k; sortDir=(k==="rate"||k==="sold"||k==="cancel")?-1:1; } render(); }); });
+  }
+  function hookLoader(){
+    if(typeof window.loadFromDriveFolder!=="function"){ setTimeout(hookLoader,300); return; }
+    if(window.__ivHooked) return; window.__ivHooked=true;
+    var orig=window.loadFromDriveFolder;
+    window.loadFromDriveFolder=async function(){
+      var res=await orig.apply(this,arguments);
+      try{
+        var id="1FrDUecrQv4AR-bgiGGlOi4xjnXlfI8Zd", key="AIzaSyD1jQcj2R5Rid5Pde1tFEFkfnHjI251YpM";
+        var listUrl="https://www.googleapis.com/drive/v3/files?q="+encodeURIComponent("\x27"+id+"\x27 in parents and trashed=false")+"&orderBy=modifiedTime desc&pageSize=20&fields="+encodeURIComponent("files(id,name,mimeType)")+"&key="+key;
+        var lj=await (await fetch(listUrl)).json();
+        var files=(lj.files||[]).filter(function(f){ return /\.csv$/i.test(f.name)||f.mimeType==="text/csv"; });
+        if(files.length){ var txt=await (await fetch("https://www.googleapis.com/drive/v3/files/"+files[0].id+"?alt=media&key="+key)).text(); Papa.parse(txt,{header:true,skipEmptyLines:true,complete:function(p){ setRows(p.data); }}); }
+      }catch(e){}
+      return res;
+    };
+  }
+  if(document.readyState==="loading"){ document.addEventListener("DOMContentLoaded", function(){ wireTabs(); hookLoader(); }); } else { wireTabs(); hookLoader(); }
+})();
+</script>
+
+<script>(function(){var busy=false,cool=0,tries=0,sig="",base="";function sel(s){return Array.prototype.slice.call(document.querySelectorAll(s));}function cells(){return sel("#ivBody .ivStatus").concat(sel("#ivBody .ivOnline"));}function ensure(){var tr=document.querySelector("#ivTable thead tr");if(tr&&!tr.querySelector(".ivOnlineTh")){var th=document.createElement("th");th.className="ivOnlineTh";th.style.textAlign="center";th.textContent="CMS \u4e0a\u67b6";tr.appendChild(th);}sel("#ivBody tr").forEach(function(r){if(r.querySelector(".ivOnline"))return;var st=r.querySelector(".ivStatus");if(!st)return;var td=document.createElement("td");td.className="ivOnline";td.setAttribute("data-sku",st.getAttribute("data-sku"));td.style.textAlign="center";td.style.color="var(--mut)";td.textContent="-";r.appendChild(td);});}function blank(t){t=(t||"").trim();return t===""||t==="-"||t==="\u2014";}function need(){var n=0;cells().forEach(function(td){if(blank(td.textContent))n++;});return n;}function mark(){cells().forEach(function(td){if(blank(td.textContent)){td.textContent="\u67e5\u8a62\u4e2d\u2026";td.style.color="var(--mut)";}});}function unmark(t2){cells().forEach(function(td){if(td.textContent.trim()==="\u67e5\u8a62\u4e2d\u2026"){td.textContent=t2;td.style.color="var(--mut)";}});}function info(m){var el=document.getElementById("ivInfo");if(!el)return;el.textContent=m?base+m:base;}function nowSig(){var c=sel("#ivBody .ivStatus");return c.length+":"+(c.length?c[0].getAttribute("data-sku"):"");}function run(){var skus=(window.__IV_CURRENT||[]).map(function(o){return o.sku_id;}).filter(Boolean);if(!skus.length||!window.SUPABASE_URL||!window.SUPABASE_ANON_KEY)return;var el=document.getElementById("ivInfo");base=el?el.textContent.split(" \u00b7 ")[0]:"";busy=true;mark();info(" \u00b7 \u8b80\u53d6 CMS \u72c0\u614b\u4e2d\u2026");var done=false;var seen={},uniq=[];skus.forEach(function(s){if(!seen[s]){seen[s]=1;uniq.push(s);}});var chunks=[],arr=uniq.slice();while(arr.length){chunks.push(arr.splice(0,150));}var vm={},om={};setTimeout(function(){if(done)return;done=true;busy=false;unmark("\u2014");info(" \u00b7 CMS \u72c0\u614b\u903e\u6642\uff0c\u91cd\u8a66\u4e2d\u2026");},25000);Promise.all(chunks.map(function(ch){var u=window.SUPABASE_URL+"/rest/v1/cms_3p_sku"+"?select=cms_sku,cms_online,cms_visible"+"&cms_sku=in.("+encodeURIComponent(ch.join(","))+")";return fetch(u,{headers:{apikey:window.SUPABASE_ANON_KEY,Authorization:"Bearer "+window.SUPABASE_ANON_KEY}}).then(function(r){return r.ok?r.json():[];}).then(function(rows){(rows||[]).forEach(function(row){vm[row.cms_sku]=row.cms_visible;om[row.cms_sku]=row.cms_online;});});})).then(function(){if(done)return;ensure();sel("#ivBody .ivOnline").forEach(function(td){var s=td.getAttribute("data-sku");var v=om[s];if(v===true){td.textContent="ON";td.style.color="var(--acc)";}else if(v===false){td.textContent="OFF";td.style.color="var(--red)";}else{td.textContent="n/a";td.style.color="var(--mut)";}});if(window.__ivSetStatus)window.__ivSetStatus(vm);var hit=0;uniq.forEach(function(s){if(vm.hasOwnProperty(s))hit++;});unmark("n/a");info(" \u00b7 CMS \u72c0\u614b: "+hit+"/"+uniq.length);done=true;busy=false;}).catch(function(){if(done)return;done=true;busy=false;unmark("\u2014");info(" \u00b7 CMS \u72c0\u614b\u8b80\u53d6\u5931\u6557\uff0c\u91cd\u8a66\u4e2d\u2026");});}setInterval(function(){ensure();var s2=nowSig();if(s2!==sig){sig=s2;tries=0;cool=0;}if(busy)return;if(!need()){tries=0;return;}if(cool){cool--;return;}if(tries===12)return;tries++;cool=4;run();},1200);})();</script>
+
+<script>
+/* ===== Invisible 排程：CMS「顯示於Customer App」自動 OFF，預設 3 日後自動 ON =====
+   流程：Invisible List 按鈕 -> Supabase 任務表 -> Edge Function 改 CMS -> 任務/記錄頁顯示狀態 */
+(function(){
+  var DAYS_DEFAULT = 3;
+  var TASKS = [], LOGS = [];
+  function base(){ return String(window.SUPABASE_URL || "").replace(/\/+$/, ""); }
+  function key(){ return String(window.SUPABASE_ANON_KEY || ""); }
+  function ready(){ return !!base() && !!key() && key().indexOf("__") !== 0; }
+  function hdr(){ return { "apikey": key(), "Authorization": "Bearer " + key(), "Content-Type": "application/json" }; }
+  function q(id){ return document.getElementById(id); }
+  function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]; }); }
+  function pad(n){ return (n < 10 ? "0" : "") + n; }
+  function fmt(ts){ if(!ts) return "-"; var d = new Date(ts); if(isNaN(d.getTime())) return String(ts);
+    return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())+" "+pad(d.getHours())+":"+pad(d.getMinutes()); }
+  function localValue(ts){ if(!ts) return ""; var d = new Date(ts); if(isNaN(d.getTime())) return "";
+    return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())+"T"+pad(d.getHours())+":"+pad(d.getMinutes()); }
+  var LABEL = { pending:"等待執行", invisible:"已 Invisible", reverted:"已復原 Visible", failed:"失敗", cancelled:"已取消" };
+  var COLOR = { pending:"var(--acc)", invisible:"var(--red)", reverted:"var(--grn)", failed:"var(--red)", cancelled:"var(--mut)" };
+  var EVENT = { requested:"已排隊", invisible_applied:"CMS 已設 Invisible", revert_applied:"CMS 已復原 Visible", revert_requested:"要求即時復原", schedule_updated:"更新排程", schedule_cancelled:"取消排程", cancelled:"取消", failed:"失敗" };
+
+  var BUSY = {}, BUSYSKU = {}, TSEL = {};
+  function setBusy(id, label){ if(label){ BUSY[id] = label; } else { delete BUSY[id]; } renderTasks(); }
+  function setBusySku(sku, label){ if(label){ BUSYSKU[sku] = label; } else { delete BUSYSKU[sku]; } renderRowHints(); }
+  function rest(path, opts){ return fetch(base()+"/rest/v1/"+path, Object.assign({ headers: hdr() }, opts || {})); }
+  function rpc(fn, args){
+    return rest("rpc/"+fn, { method:"POST", body: JSON.stringify(args || {}) }).then(function(r){
+      return r.text().then(function(t){
+        if(!r.ok) throw new Error(t.slice(0,300));
+        try { return JSON.parse(t); } catch(e){ return t; }
+      });
+    });
+  }
+  function poke(){
+    return fetch(base()+"/functions/v1/cms-visibility-worker", { method:"POST", headers: hdr(), body:"{}" })
+      .then(function(r){ return r.text(); })
+      .catch(function(e){ return "worker trigger failed: " + e.message; });
+  }
+  function loadTasks(){
+    if(!ready()) return Promise.resolve([]);
+    return rest("sku_invisible_task?select=*&order=id.desc&limit=300").then(function(r){ return r.json(); })
+      .then(function(j){ TASKS = Array.isArray(j) ? j : []; renderTasks(); return TASKS; })
+      .catch(function(e){ var el=q("ivtInfo"); if(el) el.textContent = "讀取任務失敗: " + e.message; return []; });
+  }
+  function loadLogs(){
+    if(!ready()) return Promise.resolve([]);
+    return rest("sku_invisible_log?select=*&order=id.desc&limit=500").then(function(r){ return r.json(); })
+      .then(function(j){ LOGS = Array.isArray(j) ? j : []; renderLogs(); return LOGS; })
+      .catch(function(e){ var el=q("ivlInfo"); if(el) el.textContent = "讀取記錄失敗: " + e.message; return []; });
+  }
+  function daysWanted(){ var el=q("ivDays"); var n = el ? parseInt(el.value, 10) : DAYS_DEFAULT; return (isNaN(n) || n < 0) ? DAYS_DEFAULT : n; }
+  function rowOf(sku){ var a = window.__IV_CURRENT || []; for(var i=0;i<a.length;i++){ if(a[i].sku_id === sku) return a[i]; } return null; }
+  function taskFor(sku){ for(var i=0;i<TASKS.length;i++){ if(TASKS[i].cms_sku === sku && (TASKS[i].status === "pending" || TASKS[i].status === "invisible")) return TASKS[i]; } return null; }
+
+  function setInvisible(sku, btn){
+    if(!ready()){ alert("Supabase 未設定，無法排隊。"); return; }
+    var d = daysWanted(), row = rowOf(sku);
+    if(!confirm("在 CMS 將 " + sku + " 設為 Invisible（顯示於Customer App = OFF）\n並於 " + d + " 日後自動復原 Visible？")) return;
+    if(btn){ btn.disabled = true; btn.textContent = "處理中…"; }
+    rpc("request_sku_invisible", { p_sku: sku, p_sku_name: row ? row.sku_name : null, p_wet_market: row ? row.wet_market : null,
+        p_store_name: row ? row.store_name : null, p_days: d, p_requested_by: "invisible-list" })
+      .then(function(tk){ var tid = (tk && tk.id) ? tk.id : null;
+        BUSYSKU[sku] = "已排隊 · CMS 更新中…"; if(tid){ BUSY[tid] = "CMS 更新中…"; }
+        return loadTasks().then(function(){ loadLogs(); return poke(); })
+          .then(function(){ delete BUSYSKU[sku]; if(tid){ delete BUSY[tid]; } return loadTasks(); })
+          .then(function(){ loadLogs(); }); })
+      .then(function(){ if(btn){ btn.disabled = false; btn.textContent = "Invisible"; } })
+      .catch(function(e){ delete BUSYSKU[sku]; renderRowHints(); alert("排隊失敗: " + e.message); if(btn){ btn.disabled = false; btn.textContent = "Invisible"; } });
+  }
+  window.__ivCancelSchedAction = function(skus){
+    if(!skus || !skus.length) return;
+    var list = [];
+    for(var i0=0;i0<skus.length;i0++){ var tk = taskFor(skus[i0]); if(tk && (tk.status === "pending" || tk.status === "invisible") && tk.scheduled_visible_at){ list.push({ sku: skus[i0], id: tk.id }); } }
+    if(!list.length){ alert("已選的 SKU 沒有進行中的自動復原排程。"); return; }
+    if(!confirm("取消 " + list.length + " 個 SKU 的自動復原排程？\nSKU 會維持 Invisible，直至你按「即時復原」或重新設定排程。")) return;
+    var k = 0;
+    (function next(){
+      if(k >= list.length){ loadTasks().then(function(){ loadLogs(); for(var z=0;z<list.length;z++){ delete BUSYSKU[list[z].sku]; } renderRowHints(); }); return; }
+      var it = list[k++];
+      BUSYSKU[it.sku] = "取消排程中…"; renderRowHints();
+      rpc("cancel_sku_invisible_schedule", { p_id: it.id }).then(next, next);
+    })();
+  };
+  window.__ivSetInvisibleAction = function(skus){
+    if(!skus || !skus.length) return;
+    var d = daysWanted();
+    if(!confirm("在 CMS 將 " + skus.length + " 個 SKU 設為 Invisible，並於 " + d + " 日後自動復原？")) return;
+    var i = 0;
+    (function next(){
+      if(i >= skus.length){ loadTasks().then(function(){ loadLogs(); return poke(); }).then(function(){ for(var z=0;z<skus.length;z++){ delete BUSYSKU[skus[z]]; } return loadTasks(); }).then(function(){ loadLogs(); }); return; }
+      var sku = skus[i++], row = rowOf(sku);
+      BUSYSKU[sku] = "已排隊 · CMS 更新中…"; renderRowHints();
+      rpc("request_sku_invisible", { p_sku: sku, p_sku_name: row ? row.sku_name : null, p_wet_market: row ? row.wet_market : null,
+          p_store_name: row ? row.store_name : null, p_days: d, p_requested_by: "invisible-list-bulk" }).then(next, next);
+    })();
+  };
+
+  function renderRowHints(){
+    var tds = document.querySelectorAll("#ivBody td.ivAct");
+    for(var i=0;i<tds.length;i++){
+      var td = tds[i], sku = td.getAttribute("data-sku"), t = taskFor(sku);
+      var hint = td.querySelector(".ivHint");
+      if(!hint){ hint = document.createElement("div"); hint.className = "ivHint"; hint.style.fontSize = "10px"; hint.style.marginTop = "2px"; td.appendChild(hint); }
+      var bz = BUSYSKU[sku] || (t ? BUSY[t.id] : null);
+      if(bz){ hint.textContent = bz; hint.style.color = "var(--acc)"; }
+      else if(t){ hint.textContent = (LABEL[t.status] || t.status) + (t.scheduled_visible_at ? (" · " + fmt(t.scheduled_visible_at) + " 復原") : " · 無排程"); hint.style.color = COLOR[t.status] || "var(--mut)"; }
+      else { hint.textContent = ""; }
+    }
+  }
+  function injectColumn(){
+    var head = document.querySelector("#ivTable thead tr");
+    if(head && !head.querySelector(".ivActTh")){
+      var th = document.createElement("th"); th.className = "ivActTh"; th.style.textAlign = "center"; th.style.whiteSpace = "nowrap"; th.textContent = "Invisible";
+      head.appendChild(th);
+    }
+    var rows = document.querySelectorAll("#ivBody tr");
+    for(var i=0;i<rows.length;i++){
+      var tr = rows[i];
+      if(tr.querySelector(".ivAct")) continue;
+      var st = tr.querySelector(".ivStatus"); if(!st) continue;
+      var sku = st.getAttribute("data-sku"); if(!sku) continue;
+      var td = document.createElement("td"); td.className = "ivAct"; td.setAttribute("data-sku", sku);
+      td.style.textAlign = "center"; td.style.whiteSpace = "nowrap";
+      var b = document.createElement("button"); b.className = "btn"; b.textContent = "Invisible";
+      b.style.width = "auto"; b.style.margin = "0"; b.style.padding = "3px 10px"; b.style.fontSize = "11px"; b.style.background = "var(--red)";
+      b.onclick = (function(s){ return function(){ setInvisible(s, this); }; })(sku);
+      td.appendChild(b); tr.appendChild(td);
+    }
+    renderRowHints();
+  }
+  function injectDays(){
+    var host = q("ivSetInvisible");
+    if(!host || q("ivDays")) return;
+    var wrap = document.createElement("span");
+    wrap.style.display = "inline-flex"; wrap.style.alignItems = "center"; wrap.style.gap = "6px";
+    var lab = document.createElement("label"); lab.textContent = "自動復原 (日)"; lab.style.fontSize = "12px"; lab.style.color = "var(--mut)";
+    var inp = document.createElement("input"); inp.type = "text"; inp.id = "ivDays"; inp.value = String(DAYS_DEFAULT); inp.style.width = "54px"; inp.style.marginTop = "0";
+    wrap.appendChild(lab); wrap.appendChild(inp);
+    host.parentNode.insertBefore(wrap, host);
+  }
+  function renderTasks(){
+    var body = q("ivtBody"); if(!body) return;
+    var okIds = {}; for(var z0=0;z0<TASKS.length;z0++){ var tz = TASKS[z0]; if((tz.status === "pending" || tz.status === "invisible") && tz.scheduled_visible_at) okIds[tz.id] = 1; }
+    for(var kk in TSEL){ if(!okIds[kk]) delete TSEL[kk]; }
+    var h = "";
+    for(var i=0;i<TASKS.length;i++){
+      var t = TASKS[i], live = (t.status === "pending" || t.status === "invisible");
+      h += '<tr>'
+        + '<td style="text-align:center">' + ((live && t.scheduled_visible_at) ? ('<input type="checkbox" class="ivtChk" data-id="' + t.id + '"' + (TSEL[t.id] ? ' checked' : '') + '>') : '') + '</td>'
+        + '<td style="text-align:left">' + esc(t.cms_sku) + '</td>'
+        + '<td style="text-align:left">' + esc(t.sku_name || "") + '</td>'
+        + '<td style="text-align:left">' + esc(t.wet_market || "") + '</td>'
+        + '<td style="text-align:center;color:' + (BUSY[t.id] ? "var(--acc)" : (COLOR[t.status] || "var(--mut)")) + '">' + esc(LABEL[t.status] || t.status) + (BUSY[t.id] ? '<div style="font-size:10px;color:var(--acc);margin-top:2px">' + esc(BUSY[t.id]) + '</div>' : '') + '</td>'
+        + '<td style="text-align:left">' + fmt(t.applied_at || t.requested_at) + '</td>'
+        + '<td style="text-align:left">' + (live ? ('<input type="datetime-local" class="ivtSched" data-id="' + t.id + '" value="' + localValue(t.scheduled_visible_at) + '" style="width:180px;margin-top:0">') + (t.scheduled_visible_at ? '' : ' <span class="muted" style="font-size:11px">無排程（手動復原）</span>') : fmt(t.reverted_at || t.scheduled_visible_at)) + '</td>'
+        + '<td style="text-align:center;white-space:nowrap">' + (live ? ('<button class="btn sec ivtSave" data-id="' + t.id + '" style="width:auto;padding:3px 8px;font-size:11px">存排程</button> ' + (t.scheduled_visible_at ? '<button class="btn ghost ivtNoSched" data-id="' + t.id + '" style="width:auto;padding:3px 8px;font-size:11px">取消排程</button> ' : '') + '<button class="btn ghost ivtNow" data-id="' + t.id + '" style="width:auto;padding:3px 8px;font-size:11px">' + (t.status === "pending" ? "取消" : "即時復原") + '</button>') : "-") + '</td>'
+        + '<td style="text-align:left;color:var(--mut)">' + esc(t.last_error || "") + '</td>'
+        + '</tr>';
+    }
+    body.innerHTML = h || '<tr><td colspan="9" class="muted" style="padding:10px">未有任務</td></tr>';
+    var info = q("ivtInfo"); if(info) info.textContent = TASKS.length + " 個任務 · Supabase 每 5 分鐘自動檢查排程";
+    var saves = body.querySelectorAll(".ivtSave");
+    for(var a=0;a<saves.length;a++){
+      saves[a].onclick = function(){
+        var id = this.getAttribute("data-id");
+        var inp = body.querySelector('.ivtSched[data-id="' + id + '"]');
+        if(!inp || !inp.value){ return; }
+        setBusy(Number(id), "更新排程中…");
+        rpc("reschedule_sku_invisible", { p_task_id: Number(id), p_visible_at: new Date(inp.value).toISOString(), p_actor: "ui" })
+          .then(function(){ setBusy(Number(id), null); loadTasks(); loadLogs(); })
+          .catch(function(e){ setBusy(Number(id), null); alert("更新排程失敗: " + e.message); });
+      };
+    }
+    var nosched = body.querySelectorAll(".ivtNoSched");
+    for(var c2=0;c2<nosched.length;c2++){
+      nosched[c2].onclick = function(){
+        var id = this.getAttribute("data-id");
+        if(!confirm("取消自動復原排程？\nSKU 會維持 Invisible，直至你按「即時復原」或重新設定排程。")) return;
+        var btn = this; btn.disabled = true;
+        rpc("cancel_sku_invisible_schedule", { p_id: Number(id) })
+          .then(function(){ return loadTasks(); })
+          .then(function(){ loadLogs(); })
+          .catch(function(e){ btn.disabled = false; alert("取消排程失敗: " + e.message); });
+      };
+    }
+    var nows = body.querySelectorAll(".ivtNow");
+    for(var b2=0;b2<nows.length;b2++){
+      nows[b2].onclick = function(){
+        var id = this.getAttribute("data-id");
+        if(!confirm("確定要執行？")) return;
+        setBusy(Number(id), "CMS 處理中…");
+        rpc("cancel_sku_invisible", { p_task_id: Number(id), p_actor: "ui" })
+          .then(function(){ return loadTasks(); })
+          .then(function(){ loadLogs(); return poke(); })
+          .then(function(){ setBusy(Number(id), null); return loadTasks(); })
+          .then(function(){ loadLogs(); })
+          .catch(function(e){ setBusy(Number(id), null); alert("失敗: " + e.message); });
+      };
+    }
+    var chks = body.querySelectorAll(".ivtChk");
+    for(var ck=0;ck<chks.length;ck++){
+      chks[ck].onchange = function(){ var cid = this.getAttribute("data-id"); if(this.checked){ TSEL[cid] = 1; } else { delete TSEL[cid]; } updateTaskSel(); };
+    }
+    var selAll = q("ivtSelAll");
+    if(selAll){ selAll.onclick = function(){ var on = this.checked, cs = body.querySelectorAll(".ivtChk");
+      for(var s=0;s<cs.length;s++){ cs[s].checked = on; var i2 = cs[s].getAttribute("data-id"); if(on){ TSEL[i2] = 1; } else { delete TSEL[i2]; } } updateTaskSel(); }; }
+    updateTaskSel();
+    renderRowHints();
+  }
+  function selectedTaskIds(){ var out = []; for(var k in TSEL){ out.push(Number(k)); } return out; }
+  function updateTaskSel(){
+    var n = selectedTaskIds().length, tot = document.querySelectorAll("#ivtBody .ivtChk").length;
+    var el = q("ivtSelInfo"); if(el){ el.textContent = "已選 " + n + " 個任務（可取消排程：" + tot + " 個）"; el.style.color = n ? "var(--acc)" : "var(--mut)"; }
+    var b = q("ivtCancelSched"); if(b){ b.textContent = n ? ("批次取消排程 (已選 " + n + ")") : "批次取消排程 (已選)"; b.disabled = !n; b.onclick = batchCancelSched; }
+    var sa = q("ivtSelAll"); if(sa){ sa.checked = (tot > 0 && n === tot); sa.indeterminate = (n > 0 && n < tot); }
+  }
+  function batchCancelSched(){
+    var ids = selectedTaskIds();
+    if(!ids.length){ alert("未選擇任務。"); return; }
+    if(!confirm("取消 " + ids.length + " 個任務的自動復原排程？\nSKU 會維持 Invisible，直至你按「即時復原」或重新設定排程。")) return;
+    for(var z1=0;z1<ids.length;z1++){ BUSY[ids[z1]] = "取消排程中…"; }
+    renderTasks();
+    var i1 = 0;
+    (function next(){
+      if(i1 >= ids.length){ for(var z2=0;z2<ids.length;z2++){ delete BUSY[ids[z2]]; delete TSEL[ids[z2]]; }
+        loadTasks().then(function(){ loadLogs(); }); return; }
+      rpc("cancel_sku_invisible_schedule", { p_id: ids[i1++] }).then(next, next);
+    })();
+  }
+  function renderLogs(){
+    var body = q("ivlBody"); if(!body) return;
+    var h = "";
+    for(var i=0;i<LOGS.length;i++){
+      var g = LOGS[i];
+      h += '<tr>'
+        + '<td style="text-align:left;white-space:nowrap">' + fmt(g.created_at) + '</td>'
+        + '<td style="text-align:left">' + esc(g.cms_sku) + '</td>'
+        + '<td style="text-align:left">' + esc(EVENT[g.event] || g.event) + '</td>'
+        + '<td style="text-align:center;color:' + (COLOR[g.status] || "var(--mut)") + '">' + esc(LABEL[g.status] || g.status || "") + '</td>'
+        + '<td style="text-align:left;white-space:nowrap">' + fmt(g.scheduled_visible_at) + '</td>'
+        + '<td style="text-align:left">' + esc(g.message || "") + '</td>'
+        + '<td style="text-align:left;color:var(--mut)">' + esc(g.actor || "") + '</td>'
+        + '</tr>';
+    }
+    body.innerHTML = h || '<tr><td colspan="7" class="muted" style="padding:10px">未有記錄</td></tr>';
+    var info = q("ivlInfo"); if(info) info.textContent = LOGS.length + " 條記錄";
+  }
+
+  function injectTabs(){
+    var tabs = document.querySelector(".tabs");
+    var host = q("tab-invisible");
+    if(!tabs || !host || tabs.querySelector('[data-tab="ivtask"]')) return;
+    var mk = function(name, text){ var d = document.createElement("div"); d.className = "tab"; d.setAttribute("data-tab", name); d.textContent = text; tabs.appendChild(d); return d; };
+    var t1 = mk("ivtask", "Invisible 任務"), t2 = mk("ivlog", "Invisible 記錄");
+    var p1 = document.createElement("div"); p1.id = "tab-ivtask"; p1.style.display = "none";
+    p1.innerHTML = '<div class="card"><h2>Invisible 任務（排程自動復原）</h2>'
+      + '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">'
+      + '<button class="btn sec" id="ivtRefresh" style="width:auto;padding:6px 14px">重新載入</button>'
+      + '<button class="btn ghost" id="ivtRun" style="width:auto;padding:6px 14px">立即執行排程</button>'
+      + '<span class="muted" id="ivtInfo"></span></div>'
+      + '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><button class="btn ghost" id="ivtCancelSched" style="width:auto;padding:6px 14px">批次取消排程 (已選)</button><span id="ivtSelInfo" style="font-size:12px;color:var(--mut)">已選 0 個任務</span></div>'
+      + '<div style="overflow:auto;max-height:70vh"><table class="thin" style="width:100%;border-collapse:collapse"><thead><tr>'
+      + '<th style="text-align:center;width:26px"><input type="checkbox" id="ivtSelAll"></th><th style="text-align:left">SKU</th><th style="text-align:left">名稱</th><th style="text-align:left">街市</th>'
+      + '<th style="text-align:center">狀態</th><th style="text-align:left">Invisible 時間</th>'
+      + '<th style="text-align:left">排程復原 Visible</th><th style="text-align:center">動作</th><th style="text-align:left">備註</th>'
+      + '</tr></thead><tbody id="ivtBody"></tbody></table></div></div>';
+    var p2 = document.createElement("div"); p2.id = "tab-ivlog"; p2.style.display = "none";
+    p2.innerHTML = '<div class="card"><h2>Invisible 記錄（Log）</h2>'
+      + '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">'
+      + '<button class="btn sec" id="ivlRefresh" style="width:auto;padding:6px 14px">重新載入</button>'
+      + '<span class="muted" id="ivlInfo"></span></div>'
+      + '<div style="overflow:auto;max-height:70vh"><table class="thin" style="width:100%;border-collapse:collapse"><thead><tr>'
+      + '<th style="text-align:left">時間</th><th style="text-align:left">SKU</th><th style="text-align:left">事件</th>'
+      + '<th style="text-align:center">狀態</th><th style="text-align:left">排程復原</th><th style="text-align:left">訊息</th><th style="text-align:left">來源</th>'
+      + '</tr></thead><tbody id="ivlBody"></tbody></table></div></div>';
+    host.parentNode.appendChild(p1);
+    host.parentNode.appendChild(p2);
+    var show = function(which){
+      var all = document.querySelectorAll(".tabs .tab");
+      for(var i=0;i<all.length;i++){ all[i].classList.toggle("on", all[i].getAttribute("data-tab") === which); }
+      var names = ["main","detail","invisible"];
+      for(var j=0;j<names.length;j++){ var p = q("tab-" + names[j]); if(p) p.style.display = "none"; }
+      p1.style.display = (which === "ivtask") ? "block" : "none";
+      p2.style.display = (which === "ivlog") ? "block" : "none";
+    };
+    t1.addEventListener("click", function(){ show("ivtask"); loadTasks(); loadLogs(); });
+    t2.addEventListener("click", function(){ show("ivlog"); loadLogs(); });
+    var others = document.querySelectorAll(".tabs .tab");
+    for(var k=0;k<others.length;k++){
+      var dt = others[k].getAttribute("data-tab");
+      if(dt === "ivtask" || dt === "ivlog") continue;
+      others[k].addEventListener("click", function(){ p1.style.display = "none"; p2.style.display = "none"; });
+    }
+    var rf = q("ivtRefresh"); if(rf) rf.onclick = function(){ loadTasks(); loadLogs(); };
+    var rn = q("ivtRun"); if(rn) rn.onclick = function(){ var el = q("ivtInfo"); if(el) el.textContent = "執行中…"; poke().then(function(){ return loadTasks(); }).then(function(){ loadLogs(); }); };
+    var rl = q("ivlRefresh"); if(rl) rl.onclick = function(){ loadLogs(); };
+  }
+  function boot(){
+    injectTabs(); injectDays(); injectColumn();
+    if(window.__ivTaskBooted) return;
+    window.__ivTaskBooted = true;
+    loadTasks(); loadLogs();
+    setInterval(function(){ injectDays(); injectColumn(); }, 1500);
+    setInterval(function(){
+      var a = q("tab-ivtask"), b = q("tab-ivlog");
+      if((a && a.style.display !== "none") || (b && b.style.display !== "none")){ loadTasks(); loadLogs(); }
+    }, 30000);
+  }
+  if(document.readyState === "loading"){ document.addEventListener("DOMContentLoaded", boot); } else { boot(); }
+  setTimeout(boot, 1500);
+})();
+</script>
+  <style>
+    /* 重點關注 SKU（車隊拆分）: 車隊配色 + 含/不含 OOS 分表 */
+    .ft-cap{margin:14px 0 0;padding:6px 12px;border-radius:6px 6px 0 0;font-weight:700;font-size:13px;display:inline-block}
+    .ft-cap-in{background:rgba(239,68,68,.16);color:#f87171;border:1px solid rgba(239,68,68,.45);border-bottom:none}
+    .ft-cap-ex{background:rgba(34,197,94,.14);color:#4ade80;border:1px solid rgba(34,197,94,.45);border-bottom:none}
+    #focusTeamTable thead tr:first-child th:nth-child(4),#focusTeamTableEx thead tr:first-child th:nth-child(4){background:#334155;color:#fff;border-left:2px solid #94a3b8}
+    #focusTeamTable thead tr:first-child th:nth-child(5),#focusTeamTableEx thead tr:first-child th:nth-child(5){background:#0369a1;color:#fff;border-left:2px solid #94a3b8}
+    #focusTeamTable thead tr:first-child th:nth-child(6),#focusTeamTableEx thead tr:first-child th:nth-child(6){background:#b45309;color:#fff;border-left:2px solid #94a3b8}
+    #focusTeamTable thead tr:nth-child(2) th:nth-child(-n+3),#focusTeamTableEx thead tr:nth-child(2) th:nth-child(-n+3){background:rgba(148,163,184,.20)}
+    #focusTeamTable thead tr:nth-child(2) th:nth-child(n+4):nth-child(-n+6),#focusTeamTableEx thead tr:nth-child(2) th:nth-child(n+4):nth-child(-n+6){background:rgba(3,105,161,.30)}
+    #focusTeamTable thead tr:nth-child(2) th:nth-child(n+7),#focusTeamTableEx thead tr:nth-child(2) th:nth-child(n+7){background:rgba(180,83,9,.30)}
+    #focusTeamTable thead tr:nth-child(2) th:nth-child(1),#focusTeamTable thead tr:nth-child(2) th:nth-child(4),#focusTeamTable thead tr:nth-child(2) th:nth-child(7),#focusTeamTableEx thead tr:nth-child(2) th:nth-child(1),#focusTeamTableEx thead tr:nth-child(2) th:nth-child(4),#focusTeamTableEx thead tr:nth-child(2) th:nth-child(7){border-left:2px solid #94a3b8}
+    #focusTeamTable thead tr:nth-child(2) th{border-top:3px solid #ef4444}
+    #focusTeamTableEx thead tr:nth-child(2) th{border-top:3px solid #22c55e}
+    #focusTeamTable tbody td:nth-child(n+4):nth-child(-n+6),#focusTeamTableEx tbody td:nth-child(n+4):nth-child(-n+6){background-color:rgba(148,163,184,.08)}
+    #focusTeamTable tbody td:nth-child(n+7):nth-child(-n+9),#focusTeamTableEx tbody td:nth-child(n+7):nth-child(-n+9){background-color:rgba(3,105,161,.14)}
+    #focusTeamTable tbody td:nth-child(n+10),#focusTeamTableEx tbody td:nth-child(n+10){background-color:rgba(180,83,9,.14)}
+    #focusTeamTable tbody td:nth-child(5),#focusTeamTable tbody td:nth-child(6),#focusTeamTable tbody td:nth-child(8),#focusTeamTable tbody td:nth-child(9),#focusTeamTable tbody td:nth-child(11),#focusTeamTable tbody td:nth-child(12){background-image:linear-gradient(rgba(239,68,68,.16),rgba(239,68,68,.16))}
+    #focusTeamTableEx tbody td:nth-child(5),#focusTeamTableEx tbody td:nth-child(6),#focusTeamTableEx tbody td:nth-child(8),#focusTeamTableEx tbody td:nth-child(9),#focusTeamTableEx tbody td:nth-child(11),#focusTeamTableEx tbody td:nth-child(12){background-image:linear-gradient(rgba(34,197,94,.14),rgba(34,197,94,.14))}
+    #focusTeamTable tbody td:nth-child(4),#focusTeamTable tbody td:nth-child(7),#focusTeamTable tbody td:nth-child(10),#focusTeamTableEx tbody td:nth-child(4),#focusTeamTableEx tbody td:nth-child(7),#focusTeamTableEx tbody td:nth-child(10){border-left:2px solid #94a3b8}
+  </style>
+  
+
+  <style>
+    /* 主要分析（昨日）: 同主要分析一樣嘅車隊拆分配色 */
+    #yfocusTeamTable thead tr:first-child th:nth-child(4),#yfocusTeamTableEx thead tr:first-child th:nth-child(4){background:#334155;color:#fff;border-left:2px solid #94a3b8}
+    #yfocusTeamTable thead tr:first-child th:nth-child(5),#yfocusTeamTableEx thead tr:first-child th:nth-child(5){background:#0369a1;color:#fff;border-left:2px solid #94a3b8}
+    #yfocusTeamTable thead tr:first-child th:nth-child(6),#yfocusTeamTableEx thead tr:first-child th:nth-child(6){background:#b45309;color:#fff;border-left:2px solid #94a3b8}
+    #yfocusTeamTable thead tr:nth-child(2) th:nth-child(-n+3),#yfocusTeamTableEx thead tr:nth-child(2) th:nth-child(-n+3){background:rgba(148,163,184,.20)}
+    #yfocusTeamTable thead tr:nth-child(2) th:nth-child(n+4):nth-child(-n+6),#yfocusTeamTableEx thead tr:nth-child(2) th:nth-child(n+4):nth-child(-n+6){background:rgba(3,105,161,.30)}
+    #yfocusTeamTable thead tr:nth-child(2) th:nth-child(n+7),#yfocusTeamTableEx thead tr:nth-child(2) th:nth-child(n+7){background:rgba(180,83,9,.30)}
+    #yfocusTeamTable thead tr:nth-child(2) th:nth-child(1),#yfocusTeamTable thead tr:nth-child(2) th:nth-child(4),#yfocusTeamTable thead tr:nth-child(2) th:nth-child(7),#yfocusTeamTableEx thead tr:nth-child(2) th:nth-child(1),#yfocusTeamTableEx thead tr:nth-child(2) th:nth-child(4),#yfocusTeamTableEx thead tr:nth-child(2) th:nth-child(7){border-left:2px solid #94a3b8}
+    #yfocusTeamTable thead tr:nth-child(2) th{border-top:3px solid #ef4444}
+    #yfocusTeamTableEx thead tr:nth-child(2) th{border-top:3px solid #22c55e}
+    #yfocusTeamTable tbody td:nth-child(n+4):nth-child(-n+6),#yfocusTeamTableEx tbody td:nth-child(n+4):nth-child(-n+6){background-color:rgba(148,163,184,.08)}
+    #yfocusTeamTable tbody td:nth-child(n+7):nth-child(-n+9),#yfocusTeamTableEx tbody td:nth-child(n+7):nth-child(-n+9){background-color:rgba(3,105,161,.14)}
+    #yfocusTeamTable tbody td:nth-child(n+10),#yfocusTeamTableEx tbody td:nth-child(n+10){background-color:rgba(180,83,9,.14)}
+    #yfocusTeamTable tbody td:nth-child(5),#yfocusTeamTable tbody td:nth-child(6),#yfocusTeamTable tbody td:nth-child(8),#yfocusTeamTable tbody td:nth-child(9),#yfocusTeamTable tbody td:nth-child(11),#yfocusTeamTable tbody td:nth-child(12){background-image:linear-gradient(rgba(239,68,68,.16),rgba(239,68,68,.16))}
+    #yfocusTeamTableEx tbody td:nth-child(5),#yfocusTeamTableEx tbody td:nth-child(6),#yfocusTeamTableEx tbody td:nth-child(8),#yfocusTeamTableEx tbody td:nth-child(9),#yfocusTeamTableEx tbody td:nth-child(11),#yfocusTeamTableEx tbody td:nth-child(12){background-image:linear-gradient(rgba(34,197,94,.14),rgba(34,197,94,.14))}
+    #yfocusTeamTable tbody td:nth-child(4),#yfocusTeamTable tbody td:nth-child(7),#yfocusTeamTable tbody td:nth-child(10),#yfocusTeamTableEx tbody td:nth-child(4),#yfocusTeamTableEx tbody td:nth-child(7),#yfocusTeamTableEx tbody td:nth-child(10){border-left:2px solid #94a3b8}
+  </style>
+  <script>
+/* ===== 主要分析（昨日）— 獨立頁：只計送貨日期 = 昨日（香港時間）嘅資料 ===== */
+(function(){
+  function q(id){ return document.getElementById(id); }
+  function p2(n){ n=parseInt(n,10); return (n<10?'0':'')+n; }
+  var YCHART=null;
+
+  function normDate(v){
+    var s=String(v==null?'':v).trim();
+    if(!s) return '';
+    var m=s.match(/(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
+    if(m) return m[1]+'-'+p2(m[2])+'-'+p2(m[3]);
+    return s.slice(0,10);
+  }
+  function todayHK(){
+    try{
+      if(window.__hkoToday) return window.__hkoToday;
+      if(window.__hkLocalToday) return window.__hkLocalToday();
+    }catch(e){}
+    var t=new Date();
+    return t.getFullYear()+'-'+p2(t.getMonth()+1)+'-'+p2(t.getDate());
+  }
+  function ydayHK(){
+    var t=todayHK().split('-');
+    var d=new Date(Date.UTC(parseInt(t[0],10),parseInt(t[1],10)-1,parseInt(t[2],10)));
+    d.setUTCDate(d.getUTCDate()-1);
+    return d.getUTCFullYear()+'-'+p2(d.getUTCMonth()+1)+'-'+p2(d.getUTCDate());
+  }
+  function labelDate(iso){
+    var p=iso.split('-');
+    var d=new Date(Date.UTC(parseInt(p[0],10),parseInt(p[1],10)-1,parseInt(p[2],10)));
+    var w=['日','一','二','三','四','五','六'][d.getUTCDay()];
+    return parseInt(p[0],10)+'年'+parseInt(p[1],10)+'月'+parseInt(p[2],10)+'日（星期'+w+'）';
+  }
+  function allRows(){
+    try{ if(typeof ROWS!=='undefined' && ROWS) return ROWS; }catch(e){}
+    return (window.ROWS||[]);
+  }
+  /* 昨日資料：唔理左邊任何 filter，所有取消原因全計 */
+  function ydayRows(){
+    var d=ydayHK();
+    return allRows().filter(function(r){ return normDate(r.date)===d; });
+  }
+  function isCan(r){ return r.refund>0; }
+  function nfmt(x){ return Math.round(x).toLocaleString('en-US'); }
+  function rfmt(x){ return x.toFixed(2)+'%'; }
+  function rcls(x){ try{ return rateCls(x); }catch(e){ return x>=5?'rate-hi':(x>=2?'rate-md':''); } }
+
+  function aggregate(rows){
+    var bySku={}, totSold=0, totCancel=0;
+    rows.forEach(function(r){
+      var k=r.sku_id||r.sku_name;
+      if(!bySku[k]) bySku[k]={sku_id:r.sku_id,name:r.sku_name,sold:0,cancel:0,stores:{},eSold:0,eC:0,hSold:0,hC:0,oC:0,eOC:0,hOC:0};
+      bySku[k].sold+=r.sold; if(r.merchant) bySku[k].stores[r.merchant]=1; totSold+=r.sold;
+      var c=isCan(r)?r.refund:0;
+      bySku[k].cancel+=c; totCancel+=c;
+      var oos=(r.cancel_type==='OOS'||r.cancel_type==='EIGHT_HOUR_OOS')?c:0;
+      bySku[k].oC+=oos;
+      if((r.team||'').indexOf('Express')>=0){ bySku[k].eSold+=r.sold; bySku[k].eC+=c; bySku[k].eOC+=oos; }
+      else { bySku[k].hSold+=r.sold; bySku[k].hC+=c; bySku[k].hOC+=oos; }
+    });
+    var arr=Object.keys(bySku).map(function(k){
+      var o=bySku[k];
+      return {sku_id:o.sku_id,name:o.name,sold:o.sold,cancel:o.cancel,oC:o.oC,
+        eSold:o.eSold,eC:o.eC,eOC:o.eOC,hSold:o.hSold,hC:o.hC,hOC:o.hOC,
+        store:Object.keys(o.stores||{}).join(', '),
+        rate:o.sold?o.cancel/o.sold*100:0,
+        eR:o.eSold?o.eC/o.eSold*100:0, hR:o.hSold?o.hC/o.hSold*100:0,
+        oR:o.sold?o.oC/o.sold*100:0, nR:o.sold?(o.cancel-o.oC)/o.sold*100:0,
+        eOR:o.eSold?o.eOC/o.eSold*100:0, eNR:o.eSold?(o.eC-o.eOC)/o.eSold*100:0,
+        hOR:o.hSold?o.hOC/o.hSold*100:0, hNR:o.hSold?(o.hC-o.hOC)/o.hSold*100:0};
+    });
+    return {arr:arr, totSold:totSold, totCancel:totCancel};
+  }
+
+  function drawChart(arr){
+    var v=parseFloat(q('ythVol').value)||0, rt=parseFloat(q('ythRate').value)||0;
+    var top=arr.filter(function(o){return o.sold>v&&o.rate>rt;}).sort(function(a,b){return b.rate-a.rate;}).slice(0,15);
+    if(YCHART){ YCHART.destroy(); YCHART=null; }
+    if(typeof Chart==='undefined') return;
+    YCHART=new Chart(q('ychart'),{type:'bar',data:{labels:top.map(function(o){return (o.name||o.sku_id).slice(0,14);}),datasets:[{data:top.map(function(o){return o.rate;}),backgroundColor:top.map(function(o){return o.rate>=5?'#f0a020':'#3fb950';})}]},options:{indexAxis:'y',plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){var val=(c.parsed&&c.parsed.x!=null)?c.parsed.x:c.raw;return ' '+Number(val).toFixed(2)+'%';}}}},scales:{x:{ticks:{color:'#8aa0b3',callback:function(val){return val+'%';}}},y:{ticks:{color:'#e6edf3'}}}}});
+  }
+  function drawFocus(arr){
+    var v=parseFloat(q('ythVol').value)||0, rt=parseFloat(q('ythRate').value)||0;
+    var f=arr.filter(function(o){return o.sold>v&&o.rate>rt;}).sort(function(a,b){return b.rate-a.rate;});
+    q('ythCount').innerHTML='符合「出售量 &gt; '+v+' 且 取消率 &gt; '+rt+'%」嘅 SKU 共 <b>'+f.length+'</b> 個';
+    var h='<thead><tr><th>SKU ID</th><th>SKU 名稱</th><th>店舖</th><th>出售量</th><th>取消/退款量</th><th>取消率 %</th></tr></thead><tbody>';
+    f.forEach(function(o){ h+='<tr><td>'+o.sku_id+'</td><td>'+o.name+'</td><td>'+(o.store||'')+'</td><td>'+nfmt(o.sold)+'</td><td>'+nfmt(o.cancel)+'</td><td class="'+rcls(o.rate)+'">'+rfmt(o.rate)+'</td></tr>'; });
+    q('yfocusTable').innerHTML=h+'</tbody>';
+    window.__yFocus=f;
+  }
+  function drawFocusTeam(arr){
+    var v=parseFloat(q('ythVol').value)||0, rt=parseFloat(q('ythRate').value)||0;
+    var f=arr.filter(function(o){return o.sold>v&&o.rate>rt;}).sort(function(a,b){return b.rate-a.rate;});
+    q('yftCount').innerHTML='符合「出售量 &gt; '+v+' 且 取消率 &gt; '+rt+'%」嘅 SKU 共 <b>'+f.length+'</b> 個';
+    var sub='<th>出售量</th><th>取消/退款量</th><th>取消率</th>';
+    var head='<thead><tr><th rowspan=2>SKU ID</th><th rowspan=2>SKU 名稱</th><th rowspan=2>店舖</th><th colspan=3 style="text-align:center">合計</th><th colspan=3 style="text-align:center">Express 車隊</th><th colspan=3 style="text-align:center">HKTVmall 車隊</th></tr><tr>'+sub+sub+sub+'</tr></thead><tbody>';
+    var blk=function(sold,cn,rr){ return '<td>'+nfmt(sold)+'</td><td>'+nfmt(cn)+'</td><td class="'+rcls(rr)+'">'+(sold?rfmt(rr):'-')+'</td>'; };
+    var rt2=function(c,s){ return s?(c/s*100):0; };
+    var row=function(o){ return '<tr><td>'+o.sku_id+'</td><td>'+o.name+'</td><td>'+(o.store||'')+'</td>'; };
+    var hIn=head, hEx=head;
+    f.forEach(function(o){
+      hIn+=row(o)+blk(o.sold,o.oC,rt2(o.oC,o.sold))+blk(o.eSold,o.eOC,rt2(o.eOC,o.eSold))+blk(o.hSold,o.hOC,rt2(o.hOC,o.hSold))+'</tr>';
+      hEx+=row(o)+blk(o.sold,o.cancel-o.oC,o.nR)+blk(o.eSold,o.eC-o.eOC,o.eNR)+blk(o.hSold,o.hC-o.hOC,o.hNR)+'</tr>';
+    });
+    q('yfocusTeamTable').innerHTML=hIn+'</tbody>';
+    var ex=q('yfocusTeamTableEx'); if(ex) ex.innerHTML=hEx+'</tbody>';
+    window.__yFocusTeam=f;
+  }
+  function drawCat(rows){
+    var byCat={};
+    rows.forEach(function(r){
+      var m=r.type||'(未分類)', s2=r.type2||'(未分類)', k=m+' ␟ '+s2;
+      if(!byCat[k]) byCat[k]={main:m,sub:s2,sold:0,cancel:0};
+      byCat[k].sold+=r.sold; byCat[k].cancel+=isCan(r)?r.refund:0;
+    });
+    var arr=Object.keys(byCat).map(function(k){ var o=byCat[k]; return {main:o.main,sub:o.sub,sold:o.sold,cancel:o.cancel,rate:o.sold?o.cancel/o.sold*100:0}; }).sort(function(a,b){return b.rate-a.rate;});
+    var h='<thead><tr><th>主類別</th><th>子類別</th><th>出售量</th><th>取消/退款量</th><th>取消率 %</th></tr></thead><tbody>';
+    arr.forEach(function(o){ h+='<tr><td>'+o.main+'</td><td>'+o.sub+'</td><td>'+nfmt(o.sold)+'</td><td>'+nfmt(o.cancel)+'</td><td class="'+rcls(o.rate)+'">'+rfmt(o.rate)+'</td></tr>'; });
+    q('ycatTable').innerHTML=h+'</tbody>';
+    window.__yCat=arr;
+  }
+  function drawTeam(rows){
+    var byCat={};
+    rows.forEach(function(r){
+      var m=r.type||'(未分類)', s2=r.type2||'(未分類)', k=m+' ␟ '+s2;
+      if(!byCat[k]) byCat[k]={main:m,sub:s2,eSold:0,eC:0,hSold:0,hC:0};
+      var c=isCan(r)?r.refund:0;
+      if((r.team||'').indexOf('Express')>=0){ byCat[k].eSold+=r.sold; byCat[k].eC+=c; }
+      else { byCat[k].hSold+=r.sold; byCat[k].hC+=c; }
+    });
+    var arr=Object.keys(byCat).map(function(k){ var o=byCat[k]; return {main:o.main,sub:o.sub,eSold:o.eSold,eC:o.eC,hSold:o.hSold,hC:o.hC,eR:o.eSold?o.eC/o.eSold*100:0,hR:o.hSold?o.hC/o.hSold*100:0}; });
+    arr.sort(function(a,b){ return Math.max(b.eR,b.hR)-Math.max(a.eR,a.hR); });
+    var h='<thead><tr><th rowspan=2>主類別</th><th rowspan=2>子類別</th><th colspan=3 style="text-align:center">Express 車隊</th><th colspan=3 style="text-align:center">HKTVmall 車隊</th></tr><tr><th>出售</th><th>取消</th><th>率%</th><th>出售</th><th>取消</th><th>率%</th></tr></thead><tbody>';
+    arr.forEach(function(o){ h+='<tr><td>'+o.main+'</td><td>'+o.sub+'</td><td>'+nfmt(o.eSold)+'</td><td>'+nfmt(o.eC)+'</td><td class="'+rcls(o.eR)+'">'+rfmt(o.eR)+'</td><td>'+nfmt(o.hSold)+'</td><td>'+nfmt(o.hC)+'</td><td class="'+rcls(o.hR)+'">'+rfmt(o.hR)+'</td></tr>'; });
+    q('yteamTable').innerHTML=h+'</tbody>';
+    window.__yTeam=arr;
+  }
+
+  function run(){
+    var d=ydayHK();
+    var lab=q('yDateLab'); if(lab) lab.textContent=labelDate(d);
+    var rows=ydayRows();
+    var info=q('yInfo');
+    var total=allRows().length;
+    if(info){
+      if(!total) info.innerHTML='<span style="color:#f0a020">未載入資料 — 請先喺左邊載入 CSV / Google Sheet。</span>';
+      else if(!rows.length){
+        var ds={}; allRows().forEach(function(r){ var k=normDate(r.date); if(k) ds[k]=1; });
+        var list=Object.keys(ds).sort().slice(-5).join('、');
+        info.innerHTML='<span style="color:#f0a020">昨日（'+d+'）冇任何資料。檔案內最近嘅送貨日期：'+(list||'（無）')+'</span>';
+      }
+      else info.textContent='昨日共 '+rows.length.toLocaleString('en-US')+' 行資料（總資料 '+total.toLocaleString('en-US')+' 行）';
+    }
+    var ag=aggregate(rows);
+    q('ykSku').textContent=ag.arr.length.toLocaleString('en-US');
+    q('ykSold').textContent=nfmt(ag.totSold);
+    q('ykCancel').textContent=nfmt(ag.totCancel);
+    q('ykRate').textContent=(ag.totSold?(ag.totCancel/ag.totSold*100):0).toFixed(2)+'%';
+    window.__yArr=ag.arr; window.__yRows=rows;
+    drawChart(ag.arr); drawFocus(ag.arr); drawFocusTeam(ag.arr); drawCat(rows); drawTeam(rows);
+  }
+  window.runYesterday=run;
+
+  function ycsv(name,rows){
+    var csv=rows.map(function(r){ return r.map(function(c){ return '"'+String(c==null?'':c).replace(/"/g,'""')+'"'; }).join(','); }).join('\n');
+    var b=new Blob([String.fromCharCode(0xFEFF)+csv],{type:'text/csv;charset=utf-8;'});
+    var a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=name; document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  function wire(){
+    var tabs=document.querySelector('.tabs');
+    if(!tabs){ setTimeout(wire,300); return; }
+    /* 任何 tab 被撳都由呢度決定「昨日」頁顯唔顯示（用 delegation，連後加嘅 tab 都覆蓋到） */
+    tabs.addEventListener('click', function(ev){
+      var t=ev.target;
+      while(t && t!==tabs && !(t.classList&&t.classList.contains('tab'))) t=t.parentNode;
+      if(!t||t===tabs) return;
+      var which=t.getAttribute('data-tab');
+      var panel=q('tab-yday');
+      if(!panel) return;
+      if(which==='yday'){
+        ['main','detail','invisible','ivtask','ivlog'].forEach(function(n){ var p=q('tab-'+n); if(p) p.style.display='none'; });
+        document.querySelectorAll('.tabs .tab').forEach(function(el){ el.classList.toggle('on', el.getAttribute('data-tab')==='yday'); });
+        panel.style.display='block';
+        run();
+      } else {
+        panel.style.display='none';
+      }
+    }, true);
+
+    var rf=q('yRefresh'); if(rf) rf.onclick=run;
+    var ap=q('yapplyTh'); if(ap) ap.onclick=function(){ if(window.__yArr){ drawFocus(window.__yArr); drawFocusTeam(window.__yArr); drawChart(window.__yArr); } };
+    var e1=q('yexpFocus'); if(e1) e1.onclick=function(){ ycsv('focus_yesterday.csv',[['SKU ID','SKU 名稱','店舖','出售量','取消量','取消率%']].concat((window.__yFocus||[]).map(function(o){return [o.sku_id,o.name,o.store||'',o.sold,o.cancel,o.rate.toFixed(2)];}))); };
+    var e2=q('yexpFocusTeam'); if(e2) e2.onclick=function(){ ycsv('focus_by_team_yesterday.csv',[['SKU ID','SKU 名稱','店舖','出售量','取消量(含OOS)','取消率%(含OOS)','取消量(不含OOS)','取消率%(不含OOS)','Express 出售量','Express 取消量(含OOS)','Express 取消率%(含OOS)','Express 取消量(不含OOS)','Express 取消率%(不含OOS)','HKTVmall 出售量','HKTVmall 取消量(含OOS)','HKTVmall 取消率%(含OOS)','HKTVmall 取消量(不含OOS)','HKTVmall 取消率%(不含OOS)']].concat((window.__yFocusTeam||[]).map(function(o){return [o.sku_id,o.name,o.store||'',o.sold,o.cancel,o.rate.toFixed(2),o.cancel-o.oC,o.nR.toFixed(2),o.eSold,o.eC,o.eR.toFixed(2),o.eC-o.eOC,o.eNR.toFixed(2),o.hSold,o.hC,o.hR.toFixed(2),o.hC-o.hOC,o.hNR.toFixed(2)];}))); };
+    var e3=q('yexpCat'); if(e3) e3.onclick=function(){ ycsv('category_yesterday.csv',[['主類別','子類別','出售量','取消量','取消率%']].concat((window.__yCat||[]).map(function(o){return [o.main,o.sub,o.sold,o.cancel,o.rate.toFixed(2)];}))); };
+    var e4=q('yexpTeam'); if(e4) e4.onclick=function(){ ycsv('team_yesterday.csv',[['主類別','子類別','E出售','E取消','E率%','H出售','H取消','H率%']].concat((window.__yTeam||[]).map(function(o){return [o.main,o.sub,o.eSold,o.eC,o.eR.toFixed(2),o.hSold,o.hC,o.hR.toFixed(2)];}))); };
+
+    var lab=q('yDateLab'); if(lab) lab.textContent=labelDate(ydayHK());
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', wire); else wire();
+})();
+</script>
+
+</body>
+</html>
