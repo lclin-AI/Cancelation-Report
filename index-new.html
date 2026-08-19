@@ -1572,7 +1572,37 @@ if(_isXlsx){
     return n ? n : (id||"-");
   }
 
-  /* ---------- SKU 中文名：即時向 HKTVmall 商品頁攞，localStorage 快取 ---------- */
+  /* ---------- SKU 中文名（來源一）：Drive 資料夾內嘅 SKU*.xlsx（MMS 匯出） ---------- */
+  /* 由 merchant.shoalter.com「商品管理」匯出，需要有 SKU ID 同 SKU 名稱 兩欄。
+     MMS 嘅 SKU ID 係 _S_ 之後嗰段（例：00167），所以全 ID 同尾碼都會建索引。 */
+  var SKU_FILE = {}, SKU_FILE_NAME = "";
+  function skuKeys(id){
+    var out = [String(id||"").trim()];
+    var m = String(id||"").split("_S_");
+    if(m.length>1) out.push(m[m.length-1].trim());
+    return out.filter(Boolean);
+  }
+  function buildSkuFile(rows, fname){
+    SKU_FILE = {}; SKU_FILE_NAME = "";
+    if(!rows || !rows.length) return;
+    var keys = Object.keys(rows[0]);
+    var idK = keys.filter(function(k){ return /sku\s*_?\s*id/i.test(k); })[0];
+    var nmK = keys.filter(function(k){ return /sku\s*名稱|sku\s*_?\s*name/i.test(k); })[0];
+    if(!idK || !nmK) return;
+    rows.forEach(function(r){
+      var id = String(r[idK]||"").trim(), nm = String(r[nmK]||"").trim();
+      if(!id || !nm) return;
+      skuKeys(id).forEach(function(k){ if(!SKU_FILE[k]) SKU_FILE[k]=nm; });
+    });
+    SKU_FILE_NAME = fname || "";
+  }
+  function skuFromFile(id){
+    var ks = skuKeys(id);
+    for(var i=0;i<ks.length;i++){ if(SKU_FILE[ks[i]]) return SKU_FILE[ks[i]]; }
+    return "";
+  }
+
+  /* ---------- SKU 中文名（來源二）：即時向 HKTVmall 商品頁攞，localStorage 快取 ---------- */
   var SKU_NAME = {}, SKU_CACHE_KEY = "bc_sku_names_v1", SKU_NF = "\u0001nf";
   try{ SKU_NAME = JSON.parse(localStorage.getItem(SKU_CACHE_KEY) || "{}") || {}; }catch(e){ SKU_NAME = {}; }
   function saveSkuCache(){ try{ localStorage.setItem(SKU_CACHE_KEY, JSON.stringify(SKU_NAME)); }catch(e){} }
@@ -1796,7 +1826,10 @@ if(_isXlsx){
       var hk = xl.filter(function(f){ return /^HKTV[-_]/i.test(f.name); })[0];
       var wm = xl.filter(function(f){ return /^WME[-_]/i.test(f.name); })[0];
       if(!hk && !wm) throw new Error("資料夾內找不到 HKTV-*.xlsx 或 WME-*.xlsx");
-      var jobs = [];
+      var sk = xl.filter(function(f){ return /^SKU/i.test(f.name); })[0];
+      var skJob = sk ? readXlsx(sk).then(function(rw){ buildSkuFile(rw, sk.name); }).catch(function(){ buildSkuFile([]); })
+                     : Promise.resolve(buildSkuFile([]));
+      var jobs = [skJob.then(function(){ return []; })];
       if(hk) jobs.push(readXlsx(hk).then(function(rw){ return normalise(rw,"HKTVmall",hk.name); }));
       if(wm) jobs.push(readXlsx(wm).then(function(rw){ return normalise(rw,"街市即日餸",wm.name); }));
       say("解析檔案中… " + [hk&&hk.name, wm&&wm.name].filter(Boolean).join(" + "));
@@ -1807,7 +1840,8 @@ if(_isXlsx){
         LOADED = true; LOADING = false;
         var names = [hk&&hk.name, wm&&wm.name].filter(Boolean).join("、");
         say("已載入 " + names + "（共 " + ROWS.length + " 條差評"
-            + (DROP_3P? "，已排除 express 3P 商戶 " + DROP_3P + " 條" : "") + "）");
+            + (DROP_3P? "，已排除 express 3P 商戶 " + DROP_3P + " 條" : "") + "）"
+            + (SKU_FILE_NAME? "；SKU 名對照：" + SKU_FILE_NAME : ""));
         render();
       });
     }).catch(function(e){
@@ -1852,6 +1886,8 @@ if(_isXlsx){
   function legend(show){ return { legend:{ display:show!==false, labels:{color:TICK,boxWidth:10,font:{size:11}} } }; }
 
   function skuNameOf(o){
+    var f = skuFromFile(o.id);
+    if(f) return f;
     if(o.name) return o.name;
     var v = SKU_NAME[o.id];
     if(v && v!==SKU_NF) return v;
@@ -1999,7 +2035,7 @@ if(_isXlsx){
       }).join("") + "</tbody>";
     q("bcSkuInfo").textContent = "共 " + skArr.length + " 個 SKU，顯示頭 " + Math.min(40,skArr.length) +
       " 名（" + withSku.length + " 條差評有 SKU 記錄，" + (rows.length-withSku.length) + " 條冇）";
-    fillSkuNames(skArr.slice(0,40).map(function(o){ return o.id; }));
+    fillSkuNames(skArr.slice(0,40).filter(function(o){ return !skuFromFile(o.id); }).map(function(o){ return o.id; }));
 
     /* --- 問題分類 x 平台 表 --- */
     q("bcThemeTbl").innerHTML =
@@ -2121,7 +2157,7 @@ if(_isXlsx){
     +   '<div class="bc-note" style="margin-top:6px">商戶名稱取自自營店對照表同 Invisible List 嘅街市檔口對照表；未收錄嘅商戶會顯示原始 Store ID。</div></div>'
     + '<div class="card"><h2>SKU / 商品差評排行</h2><div class="bc-note" id="bcSkuInfo" style="margin-bottom:6px"></div>'
     +   '<div class="scroll" style="max-height:60vh;overflow:auto"><table class="thin" id="bcSkuTbl"></table></div>'
-    +   '<div class="bc-note" style="margin-top:6px">商品中文名係開頁時即時去 hktvmall.com 商品頁攞返（會快取喺瀏覽器，第二次即刻出）；顯示「商品頁搵唔到」即係該商品頁已經冇咗或者已下架。撳 SKU 可以直接開商品頁。<b>注意：</b>Express（街市即日餸）嘅 export 冇提供 Variant Product ID / Product ID，所以呢個排行實際上只覆蓋到 HKTVmall 嗰部分；如果要 express 嘅 SKU 排行，需要喺 export 加返 SKU 欄位。</div></div>'
+    +   '<div class="bc-note" style="margin-top:6px">商品中文名優先用 Drive 資料夾內嘅 <b>SKU*.xlsx</b>（喺 MMS 商品管理匯出，要有「SKU ID」同「SKU 名稱」兩欄，_S_ 尾碼同全 ID 都認）；如果冇呢個檔或者搵唔到，就會即時去 hktvmall.com 商品頁攞返（會快取喺瀏覽器）。顯示「商品頁搵唔到」即係下架商品，喺 MMS 匯出檔就會有返個名。撳 SKU 可以直接開商品頁。<b>注意：</b>Express（街市即日餸）嘅 export 冇提供 Variant Product ID / Product ID，所以呢個排行實際上只覆蓋到 HKTVmall 嗰部分；如果要 express 嘅 SKU 排行，需要喺 export 加返 SKU 欄位。</div></div>'
     + '<div class="card" id="bcHkNative" style="display:none"><h2>HKTVmall 系統原生分類</h2>'
     +   '<div class="scroll"><table class="thin" id="bcHkTbl"></table></div>'
     +   '<div class="bc-note" style="margin-top:6px">WME 檔案冇提供 Issue Type / Severity 欄位，所以只顯示 HKTVmall 部分；跨平台比較請睇上面嘅自動分類。</div></div>'
