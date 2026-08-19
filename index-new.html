@@ -1565,6 +1565,7 @@ if(_isXlsx){
       (window.__IV_STORE_WL||[]).forEach(function(p){ if(p&&p[0]) STORE_NAME[String(p[0])]=String(p[1]||""); });
     }catch(e){}
     STORE_NAME["B0812001"] = STORE_NAME["B0812001"] || "HKTVmall 超市 / 即日餸";
+    try{ Object.keys(ONE_P_STORE).forEach(function(k){ STORE_NAME[k] = STORE_NAME[k] || ONE_P_STORE[k]; }); }catch(e){}
   }
   function storeLabel(id){
     var n = STORE_NAME[id];
@@ -1894,6 +1895,49 @@ if(_isXlsx){
       }).join("") + "</tbody>";
     q("bcStoreInfo").textContent = "共 "+stArr.length+" 個商戶，顯示頭 "+Math.min(30,stArr.length)+" 名";
 
+    /* --- SKU / 商品排行 --- */
+    var withSku = rows.filter(function(r){ return r.sku; });
+    var bySku = {};
+    withSku.forEach(function(r){
+      var k = r.sku;
+      if(!bySku[k]) bySku[k]={ id:k, name:"", n:0, plat:{}, th:{}, risk:0, churn:0, rate:[], sample:"", store:r.store };
+      var o = bySku[k];
+      o.n++; o.plat[r.platform]=1;
+      if(!o.name && r.skuName) o.name = r.skuName;
+      if(r.rating!=null) o.rate.push(r.rating);
+      r.themes.forEach(function(t){ o.th[t]=(o.th[t]||0)+1; });
+      if(r.themes.indexOf("safety")>=0||r.themes.indexOf("hygiene")>=0) o.risk++;
+      if(r.churn) o.churn++;
+      if(!o.sample || (r.content.length>o.sample.length && r.content.length<90)) o.sample=r.content;
+    });
+    var skArr = Object.keys(bySku).map(function(k){ return bySku[k]; }).sort(function(a,b){ return b.n-a.n; });
+    var skMax = skArr.length? skArr[0].n : 1;
+    q("bcSkuTbl").innerHTML =
+      "<thead><tr><th style='width:32px'>#</th><th style='width:230px'>SKU / 商品</th><th style='width:90px'>平台</th>"+
+      "<th style='width:120px'>差評數</th><th style='width:70px;text-align:center'>平均星</th>"+
+      "<th style='width:200px'>主要問題</th><th style='width:80px;text-align:center'>食安/衛生</th>"+
+      "<th style='width:70px;text-align:center'>流失</th><th>代表評論</th></tr></thead><tbody>" +
+      skArr.slice(0,40).map(function(o,i){
+        var top = sortMap(o.th).slice(0,3).map(function(x){ return (THEME_BY_KEY[x[0]]?THEME_BY_KEY[x[0]].name:x[0])+" "+x[1]; }).join("、");
+        var plat = Object.keys(o.plat).map(function(pp){ return '<span class="bc-pill '+(pp==="HKTVmall"?"hktv":"wme")+'">'+esc(pp==="HKTVmall"?"HKTV":"街市")+'</span>'; }).join(" ");
+        var avg = o.rate.length? (o.rate.reduce(function(a2,b2){return a2+b2;},0)/o.rate.length).toFixed(1) : "-";
+        var url = "https://www.hktvmall.com/p/" + encodeURIComponent(o.id);
+        return "<tr><td>"+(i+1)+"</td>"+
+          "<td><a href='"+esc(url)+"' target='_blank' rel='noopener' style='color:var(--grn);text-decoration:none'><b>"+esc(o.id)+"</b></a>"+
+          (o.name?"<div class='bc-note'>"+esc(o.name)+"</div>":"")+
+          "<div class='bc-note'>"+esc(storeLabel(o.store))+"</div></td>"+
+          "<td>"+plat+"</td>"+
+          "<td><b style='color:var(--red)'>"+o.n+"</b> <span class='bc-note'>("+pct(o.n,withSku.length).toFixed(1)+"%)</span>"+
+          "<div class='bc-bar'><i style='width:"+pct(o.n,skMax).toFixed(1)+"%'></i></div></td>"+
+          "<td style='text-align:center;color:var(--red)'><b>"+avg+"</b></td>"+
+          "<td class='bc-note'>"+esc(top||"-")+"</td>"+
+          "<td style='text-align:center'>"+(o.risk?"<span class='bc-pill sev'>"+o.risk+"</span>":"-")+"</td>"+
+          "<td style='text-align:center'>"+(o.churn?"<span class='bc-pill sev'>"+o.churn+"</span>":"-")+"</td>"+
+          "<td class='bc-txt bc-note'>"+esc(o.sample.slice(0,80))+"</td></tr>";
+      }).join("") + "</tbody>";
+    q("bcSkuInfo").textContent = "共 " + skArr.length + " 個 SKU，顯示頭 " + Math.min(40,skArr.length) +
+      " 名（" + withSku.length + " 條差評有 SKU 記錄，" + (rows.length-withSku.length) + " 條冇）";
+
     /* --- 問題分類 x 平台 表 --- */
     q("bcThemeTbl").innerHTML =
       "<thead><tr><th>問題分類</th><th style='width:90px;text-align:right'>總數</th><th style='width:90px;text-align:right'>佔比</th>"+
@@ -2011,7 +2055,10 @@ if(_isXlsx){
     + '<div class="card"><h2>問題分類明細</h2><div class="scroll"><table class="thin" id="bcThemeTbl"></table></div></div>'
     + '<div class="card"><h2>商戶 / 檔口差評排行</h2><div class="bc-note" id="bcStoreInfo" style="margin-bottom:6px"></div>'
     +   '<div class="scroll" style="max-height:60vh;overflow:auto"><table class="thin" id="bcStoreTbl"></table></div>'
-    +   '<div class="bc-note" style="margin-top:6px">商戶名稱取自 Invisible List 嘅街市檔口對照表；未收錄嘅商戶會顯示原始 Store ID。</div></div>'
+    +   '<div class="bc-note" style="margin-top:6px">商戶名稱取自自營店對照表同 Invisible List 嘅街市檔口對照表；未收錄嘅商戶會顯示原始 Store ID。</div></div>'
+    + '<div class="card"><h2>SKU / 商品差評排行</h2><div class="bc-note" id="bcSkuInfo" style="margin-bottom:6px"></div>'
+    +   '<div class="scroll" style="max-height:60vh;overflow:auto"><table class="thin" id="bcSkuTbl"></table></div>'
+    +   '<div class="bc-note" style="margin-top:6px">撳 SKU 可以直接開商品頁。<b>注意：</b>Express（街市即日餸）嘅 export 冇提供 Variant Product ID / Product ID，所以呢個排行實際上只覆蓋到 HKTVmall 嗰部分；如果要 express 嘅 SKU 排行，需要喺 export 加返 SKU 欄位。</div></div>'
     + '<div class="card" id="bcHkNative" style="display:none"><h2>HKTVmall 系統原生分類</h2>'
     +   '<div class="scroll"><table class="thin" id="bcHkTbl"></table></div>'
     +   '<div class="bc-note" style="margin-top:6px">WME 檔案冇提供 Issue Type / Severity 欄位，所以只顯示 HKTVmall 部分；跨平台比較請睇上面嘅自動分類。</div></div>'
