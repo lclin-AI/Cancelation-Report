@@ -1509,5 +1509,544 @@ if(_isXlsx){
 })();
 </script>
 
+
+<style>
+/* ===== 差評分析 (P7D Bad Comment) ===== */
+#tab-badcmt .bc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
+#tab-badcmt .bc-chart{position:relative;height:260px}
+#tab-badcmt .bc-chart.tall{height:320px}
+#tab-badcmt .bc-pill{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;border:1px solid var(--line);color:var(--mut);white-space:nowrap}
+#tab-badcmt .bc-pill.hktv{color:#58a6ff;border-color:#1f6feb;background:rgba(31,111,235,.14)}
+#tab-badcmt .bc-pill.wme{color:var(--acc);border-color:var(--acc);background:rgba(240,160,32,.14)}
+#tab-badcmt .bc-pill.sev{color:var(--red);border-color:var(--red);background:rgba(248,81,73,.14)}
+#tab-badcmt td.bc-txt{max-width:520px;white-space:normal;line-height:1.45}
+#tab-badcmt table.thin th{position:sticky;top:0;background:var(--panel2);z-index:1;text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);font-weight:600;color:var(--mut)}
+#tab-badcmt table.thin td{padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top;text-align:left}
+#tab-badcmt #bcKpi .kpi{flex:1 1 calc(25% - 14px);min-width:190px}
+#tab-badcmt #bcListTbl td:nth-child(5){width:auto;min-width:320px}
+#tab-badcmt #bcStoreTbl td:nth-child(8){min-width:220px}
+#tab-badcmt table.thin tbody tr:hover{background:var(--panel2)}
+#tab-badcmt .bc-flt{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+#tab-badcmt .bc-flt select,#tab-badcmt .bc-flt input[type=text]{width:auto;min-width:150px;margin-top:0}
+#tab-badcmt .bc-bar{height:6px;border-radius:3px;background:var(--panel2);overflow:hidden;margin-top:3px}
+#tab-badcmt .bc-bar i{display:block;height:100%;background:var(--red)}
+#tab-badcmt .bc-note{font-size:11px;color:var(--mut);line-height:1.5}
+#tab-badcmt .bc-ins{border-left:3px solid var(--acc);background:rgba(240,160,32,.07);padding:8px 12px;margin:8px 0;border-radius:0 6px 6px 0;font-size:12px;line-height:1.6}
+#tab-badcmt .bc-ins.red{border-left-color:var(--red);background:rgba(248,81,73,.07)}
+#tab-badcmt .bc-ins b{color:var(--txt)}
+</style>
+<script>
+/* ===================================================================
+   差評分析 (Bad Comment Analysis) — 新分頁
+   資料源: Google Drive「P7D Bad Comment Raw」資料夾
+     HKTV-*.xlsx  -> HKTVmall
+     WME-*.xlsx   -> 街市即日餸 (Wet Market Express)
+   每次開啟分頁自動讀取資料夾內最新一份檔案。
+   =================================================================== */
+(function(){
+  "use strict";
+  var FOLDER_ID = "1jgtKkl64aair3GUpnCq41WVxi_jZfzn4";
+  var API_KEY   = "AIzaSyD1jQcj2R5Rid5Pde1tFEFkfnHjI251YpM";
+  var PANEL_ID  = "tab-badcmt";
+  var TAB_NAME  = "badcmt";
+
+  var ROWS = [];          /* 合併後全部差評 */
+  var CHARTS = {};
+  var LOADED = false, LOADING = false;
+
+  function q(id){ return document.getElementById(id); }
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];}); }
+  function pct(n,d){ return d? (n/d*100) : 0; }
+
+  /* ---------- 商戶名稱 (沿用 Invisible List 嘅街市檔名對照) ---------- */
+  var STORE_NAME = {};
+  function buildStoreNames(){
+    try{
+      (window.__IV_STORE_WL||[]).forEach(function(p){ if(p&&p[0]) STORE_NAME[String(p[0])]=String(p[1]||""); });
+    }catch(e){}
+    STORE_NAME["B0812001"] = STORE_NAME["B0812001"] || "HKTVmall 超市 / 即日餸";
+  }
+  function storeLabel(id){
+    var n = STORE_NAME[id];
+    return n ? n : (id||"-");
+  }
+
+  /* ---------- 問題分類 (關鍵字) ---------- */
+  /* 由高風險排到低風險，primary theme 取最高優先命中者 */
+  var THEMES = [
+    { key:"hygiene",  name:"衛生 / 異物",         color:"#f85149",
+      re:/蟲|虫|蟲蛹|昆蟲|昆虫|烏蠅|蒼蠅|苍蝇|曱甴|蟑螂|老鼠|毛髮|頭髮|髮絲|毛发|头发|異物|异物|沙石|多沙|噁心|想嘔|嘔心|唔衛生|不衛生|衛生情況|卫生|髒|脏|worm|insect|hair|dirty|hygien/i },
+    { key:"safety",   name:"食安風險",             color:"#ff7b72",
+      re:/肚痛|肚屙|肚瀉|肚泻|腹瀉|拉肚|腸胃炎|肠胃炎|食物中毒|食完病|生病|食物安全|唔敢食|不敢食|不敢吃|唔敢試|不敢試|食唔落|食唔到落|sick|food safety|diarrh/i },
+    { key:"spoiled",  name:"變壞 / 不新鮮",        color:"#e3833a",
+      re:/唔新鮮|不新鮮|不新鲜|不鮮|無鮮味|冇鮮味|變壞|变坏|壞咗|坏咗|壞左|壞掉|坏掉|壞嘅|壞的|坏的|坏了|壞死|都是壞|開始壞|爛蛋|發霉|发霉|發毛|发毛|發曬毛|發哂毛|發晒毛|霉|黴|[是係]梅|梅嘅|梅的|臭|餿|宿|異味|怪味|酸臭|變質|变质|變酸|變黑|变黑|變色|变色|變黃|变黄|發黑|发黑|黑哂|黑晒|發黃|发黄|全黃|枯|焉|腐爛|腐烂|過期|过期|收水|皺皮|出水|滲水|滑潺潺|潺|批皮|浸過水|滴水|未熟|沒有熟|仲係青色|青色未|死咗|死的|死左|死了|死蟹|死蝦|死螺|死晒|反白眼|瞓覺|睡覺了|老到|已老|好老|太老|又老|rotten|mould|mold|not fresh|smell|spoil/i },
+    { key:"damage",   name:"破損 / 壓爛",          color:"#d29922",
+      re:/爛|烂|破|裂|列開|裂开|壓扁|壓爛|壓到|压|碎|凹|折斷|斷支|斷了|損壞|损坏|受損|穿窿|漏氣|漏|爆開|爆殼|爆曬|爆既|爆咗|鎅花|瘀|手指痕|甩色|crush|broken|crack|damage/i },
+    { key:"coldchain",name:"冷鏈 / 溶雪",          color:"#58a6ff",
+      re:/冰包|冰袋|保溫袋|保溫|保温|冷藏|雪藏|保凍|溶咗|溶晒|溶曬|溶解|已溶|半溶|少溶|解凍|解冻|倒汗水|melt|ice pack|thaw/i },
+    { key:"missing",  name:"漏send / 送錯",        color:"#a371f7",
+      re:/送漏|漏咗|送少|少送|少咗|少了|少一|冇送|沒有送|没有送|未送|送錯|送错|比錯|俾錯|畀錯|寄錯|只收到|衹收到|祗收到|只送來|只送了|只送1|無左|冇左|唔見咗|不見了|送咗.{0,6}嚟|送來是|送來的是|送來一個|missing|wrong item/i },
+    { key:"mismatch", name:"貨不對版 / 描述不符",   color:"#db61a2",
+      re:/貨不對版|货不对版|與商品不符|与商品不符|與圖片|与图片|同張相|沒圖片好|冇圖片好|唔似|不似|不符|違反商品|违反商品|商品說明|誤導|误导|貨品說明|唔係同類|水蟹|無膏|冇膏|沒有膏|空殼|得個殼|無肉|冇肉|唔夠肉|多過肉|都係骨|係骨頭|骨頭|骨头|骨多|肥膏|肥肉多|扮|當大|假野|假貨|合成肉|標示|标示|寫明是|Product of|大溝細|切頭切尾|老襯|奄仔蟹|唔係紅肉|as described|not as/i },
+    { key:"weight",   name:"份量 / 重量不足",       color:"#3fb950",
+      re:/不足秤|唔足秤|唔夠秤|唔足|不足磅|不足重|唔足重|重量不足|不足\d|只有\d+\s*(g|克|両|兩)|份量|分量|重量|斤兩|唔夠|不夠|不够|太細|太小|好細|好小|細粒|細條|細隻|细|超細|細棵|特別小|得\s?[\d一兩三四五六七八九十]|只有\d|大細不一|大小不勻|越嚟越細|越來越細|size|short weight/i },
+    { key:"cs",       name:"客服 / 退款",           color:"#ff9bce",
+      re:/退款|退貨|退货|退回|退返錢|退錢|退钱|客服|客戶服務|投訴|投诉|消費委員會|消委會|個案|不獲批|唔批|唔退|不能退|冇得退|refund|complain/i },
+    { key:"delivery", name:"派送 / 時間",           color:"#79c0ff",
+      re:/遲送|遲咗|遲到|好遲|送貨員|派送|送貨時間|未ready|delivery|late/i },
+    { key:"taste",    name:"味道 / 口感",           color:"#8b949e",
+      re:/唔好食|不好食|难食|難食|[冇無沒].{0,4}味|味道也沒有|唔甜|不甜|不鮮甜|好酸|很酸|太酸|酸到|又酸|少少酸|頗酸|颇酸|苦味|苦到|好苦|好咸|好鹹|超咸|太咸|太鹹|很鹹|韌|淋|腍|冧|渣|多揸|口感|沉底|唔爽彈|唔彈牙|不彈牙|乾柴|乾噌|大乾|好乾|油益|油饐|唔啱.{0,2}口味|太散|好散|不成型|有點老|有啲老|越長越老|硬崩崩|又硬|好硬|咁硬|又實|實淨|好腥|又腥|好肥|太肥|其他好肥|皮很厚|厚切|taste|bland/i },
+    { key:"price",    name:"價格 / 唔值",           color:"#6e7681",
+      re:/唔值|不值|太貴|好貴|咁貴|贵|貴夾|價錢|价钱|抵唔抵|搵笨|智商稅|智商税|加咗價|expensive|overprice/i },
+    { key:"generic",  name:"整體質素差 (籠統)",      color:"#57606a",
+      re:/差|失望|唔靚|不靚|唔得|一般|質素|质素|品質|品质|唔掂|不掂|離晒譜|離譜|离谱|唔建議|不建議|唔滿意|不满意|參差|参差|如圖|垃圾|冇誠信|黑店|古惑|忘記初心|不會再購買|唔會再購買|唔食得|不能食|又係咁樣|缺貨|加緊檢查|無法理解|无法理解|勁嬲|好嬲|How\?|Refer to/i }
+  ];
+  var THEME_BY_KEY = {}; THEMES.forEach(function(t){ THEME_BY_KEY[t.key]=t; });
+
+  /* 流失 / 升級訊號 */
+  var CHURN_RE = /唔會再買|不會再買|唔會再幫襯|不會再幫襯|唔會再光顧|不會再光顧|無下次|冇下次|以後唔|以後不會|再不會|唔敢再|不敢再|最後一次|唔會信任|never again|no more/i;
+  var ESCALATE_RE = /投訴|消費委員會|海關|違反商品說明|要求退款|強烈要求|黑店|欺騙|被騙|呃|老襯|存心|古惑/i;
+
+  function classify(text){
+    var t = String(text||"");
+    var hits = [];
+    for(var i=0;i<THEMES.length;i++){ if(THEMES[i].re.test(t)) hits.push(THEMES[i].key); }
+    return hits;
+  }
+
+  /* ---------- Excel 序號 -> 日期 ---------- */
+  function toDate(v){
+    if(v==null||v==="") return null;
+    if(typeof v==="number" || /^\d+(\.\d+)?$/.test(String(v))){
+      var n = parseFloat(v);
+      if(n>20000 && n<80000){ return new Date(Math.round((n-25569)*86400000)); }
+    }
+    var d = new Date(v);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  function dstr(d){ return d ? d.toISOString().slice(0,10) : "-"; }
+  function dtstr(d){ return d ? (d.toISOString().slice(0,10)+" "+d.toISOString().slice(11,16)) : "-"; }
+
+  /* ---------- 讀 Drive ---------- */
+  function say(m){ var el=q("bcStatus"); if(el) el.textContent=m; }
+
+  function listFiles(){
+    var url = "https://www.googleapis.com/drive/v3/files?q=" +
+      encodeURIComponent("'"+FOLDER_ID+"' in parents and trashed=false") +
+      "&orderBy=modifiedTime desc&pageSize=100&fields=" +
+      encodeURIComponent("files(id,name,modifiedTime,mimeType,size)") + "&key=" + API_KEY;
+    return fetch(url).then(function(r){ if(!r.ok) throw new Error("Drive list HTTP "+r.status); return r.json(); })
+      .then(function(j){ return j.files||[]; });
+  }
+  function waitXlsx(ms){
+    return new Promise(function(res,rej){
+      var t0 = Date.now();
+      (function tick(){
+        if(typeof XLSX!=="undefined") return res();
+        if(Date.now()-t0 > (ms||12000)) return rej(new Error("Excel 解析元件 (XLSX) 載入不到，請檢查網絡後再試"));
+        setTimeout(tick,200);
+      })();
+    });
+  }
+  function readXlsx(file){
+    var url = "https://www.googleapis.com/drive/v3/files/"+file.id+"?alt=media&key="+API_KEY;
+    return waitXlsx()
+      .then(function(){ return fetch(url); })
+      .then(function(r){ if(!r.ok) throw new Error("download HTTP "+r.status); return r.arrayBuffer(); })
+      .then(function(ab){
+        var wb = XLSX.read(new Uint8Array(ab),{type:"array"});
+        var ws = wb.Sheets[wb.SheetNames[0]];
+        return XLSX.utils.sheet_to_json(ws,{defval:"",raw:true});
+      });
+  }
+
+  function normalise(raw, platform, srcName){
+    var out = [];
+    for(var i=0;i<raw.length;i++){
+      var r = raw[i];
+      var content = String(r["Review Content"]||"").trim();
+      if(!content) continue;
+      var d = toDate(r["Review Date Time"]);
+      var themes = classify(content);
+      var rating = parseFloat(r["Customer Rating"]);
+      var o = {
+        pk: String(r["Review PK"]||""),
+        platform: platform,
+        src: srcName,
+        date: d,
+        day: dstr(d),
+        order: String(r["Order ID"]||""),
+        content: content,
+        rating: isNaN(rating)? null : rating,
+        store: String(r["Store ID"]||"").trim(),
+        storeName: String(r["Store Name Zh"]||r["Store Name En"]||"").trim(),
+        sku: String(r["Variant Product ID"]||"").trim(),
+        skuName: String(r["Variant Product Name Zh"]||r["Variant Product Name En"]||"").trim(),
+        member: String(r["Membership Level"]||"").trim(),
+        cat: String(r["Category Code"]||"").trim(),
+        zone: String(r["Zone"]||"").trim(),
+        srcIssue: String(r["Issue Type with Highest priority"]||"").trim(),
+        srcSev: String(r["Alert Severity Level"]||"").trim(),
+        themes: themes,
+        primary: themes.length? themes[0] : "other",
+        churn: CHURN_RE.test(content),
+        escalate: ESCALATE_RE.test(content)
+      };
+      if(o.storeName) STORE_NAME[o.store] = o.storeName;
+      out.push(o);
+    }
+    return out;
+  }
+
+  function load(force){
+    if(LOADING) return Promise.resolve();
+    if(LOADED && !force) return Promise.resolve();
+    LOADING = true;
+    say("讀取 Drive 資料夾中…");
+    return listFiles().then(function(files){
+      var xl = files.filter(function(f){ return /\.xlsx$/i.test(f.name||""); });
+      var hk = xl.filter(function(f){ return /^HKTV[-_]/i.test(f.name); })[0];
+      var wm = xl.filter(function(f){ return /^WME[-_]/i.test(f.name); })[0];
+      if(!hk && !wm) throw new Error("資料夾內找不到 HKTV-*.xlsx 或 WME-*.xlsx");
+      var jobs = [];
+      if(hk) jobs.push(readXlsx(hk).then(function(rw){ return normalise(rw,"HKTVmall",hk.name); }));
+      if(wm) jobs.push(readXlsx(wm).then(function(rw){ return normalise(rw,"街市即日餸",wm.name); }));
+      say("解析檔案中… " + [hk&&hk.name, wm&&wm.name].filter(Boolean).join(" + "));
+      return Promise.all(jobs).then(function(parts){
+        ROWS = [];
+        parts.forEach(function(p){ ROWS = ROWS.concat(p); });
+        ROWS.sort(function(a,b){ return (b.date?b.date.getTime():0) - (a.date?a.date.getTime():0); });
+        LOADED = true; LOADING = false;
+        var names = [hk&&hk.name, wm&&wm.name].filter(Boolean).join("、");
+        say("已載入 " + names + "（共 " + ROWS.length + " 條差評）");
+        render();
+      });
+    }).catch(function(e){
+      LOADING = false;
+      say("載入失敗：" + e.message);
+    });
+  }
+
+  /* ---------- 統計 ---------- */
+  function count(arr, fn){ var m={}; arr.forEach(function(x){ var k=fn(x); if(k==null||k==="") return; m[k]=(m[k]||0)+1; }); return m; }
+  function sortMap(m){ return Object.keys(m).map(function(k){ return [k,m[k]]; }).sort(function(a,b){ return b[1]-a[1]; }); }
+
+  function filtered(){
+    var p = q("bcPlat") ? q("bcPlat").value : "";
+    var t = q("bcTheme") ? q("bcTheme").value : "";
+    var k = q("bcKw") ? q("bcKw").value.trim() : "";
+    var f = q("bcFlag") ? q("bcFlag").value : "";
+    var re = null; if(k){ try{ re = new RegExp(k,"i"); }catch(e){ re = null; } }
+    return ROWS.filter(function(r){
+      if(p && r.platform!==p) return false;
+      if(t && r.themes.indexOf(t)<0 && !(t==="other"&&r.themes.length===0)) return false;
+      if(f==="churn" && !r.churn) return false;
+      if(f==="escalate" && !r.escalate) return false;
+      if(f==="safety" && r.themes.indexOf("safety")<0 && r.themes.indexOf("hygiene")<0) return false;
+      if(k){ if(re){ if(!re.test(r.content) && !re.test(r.store) && !re.test(storeLabel(r.store)) && !re.test(r.order) && !re.test(r.sku)) return false; }
+             else if(r.content.indexOf(k)<0) return false; }
+      return true;
+    });
+  }
+
+  /* ---------- 畫圖 ---------- */
+  function chart(id, cfg){
+    var el = q(id); if(!el || typeof Chart==="undefined") return;
+    if(CHARTS[id]){ CHARTS[id].destroy(); }
+    CHARTS[id] = new Chart(el.getContext("2d"), cfg);
+  }
+  var GRID = "rgba(138,160,179,.15)", TICK = "#8aa0b3";
+  function axes(stack){
+    return { x:{ stacked:!!stack, grid:{color:GRID}, ticks:{color:TICK,font:{size:10}} },
+             y:{ stacked:!!stack, beginAtZero:true, grid:{color:GRID}, ticks:{color:TICK,font:{size:10},precision:0} } };
+  }
+  function legend(show){ return { legend:{ display:show!==false, labels:{color:TICK,boxWidth:10,font:{size:11}} } }; }
+
+  /* ---------- 渲染 ---------- */
+  function render(){
+    if(!ROWS.length) return;
+    var rows = filtered();
+    var hk = rows.filter(function(r){ return r.platform==="HKTVmall"; });
+    var wm = rows.filter(function(r){ return r.platform==="街市即日餸"; });
+
+    /* --- KPI --- */
+    var rated = rows.filter(function(r){ return r.rating!=null; });
+    var avg = rated.length ? rated.reduce(function(s,r){ return s+r.rating; },0)/rated.length : 0;
+    var one = rated.filter(function(r){ return r.rating<=1; }).length;
+    var stores = {}; rows.forEach(function(r){ if(r.store) stores[r.store]=1; });
+    var risk = rows.filter(function(r){ return r.themes.indexOf("safety")>=0 || r.themes.indexOf("hygiene")>=0; }).length;
+    var churn = rows.filter(function(r){ return r.churn; }).length;
+    var escN = rows.filter(function(r){ return r.escalate; }).length;
+    var days = {}; rows.forEach(function(r){ if(r.day!=="-") days[r.day]=1; });
+    var dayKeys = Object.keys(days).sort();
+
+    function kpi(lab,val,cls,sub){
+      return '<div class="kpi"><div class="lab">'+esc(lab)+'</div><div class="val'+(cls?" "+cls:"")+'">'+val+'</div>'+
+             (sub?'<div class="bc-note" style="margin-top:4px">'+sub+'</div>':'')+'</div>';
+    }
+    q("bcKpi").innerHTML =
+      kpi("差評總數", rows.length, "red", (dayKeys.length? dayKeys[0]+" ~ "+dayKeys[dayKeys.length-1] : "")) +
+      kpi("HKTVmall", hk.length, "", pct(hk.length,rows.length).toFixed(1)+"% of total") +
+      kpi("街市即日餸", wm.length, "", pct(wm.length,rows.length).toFixed(1)+"% of total") +
+      kpi("平均星級", avg.toFixed(2), avg<1.5?"red":"", one+" 條 1 星（"+pct(one,rated.length).toFixed(0)+"%）") +
+      kpi("涉及商戶", Object.keys(stores).length, "", "平均每戶 "+(Object.keys(stores).length? (rows.length/Object.keys(stores).length).toFixed(1):"0")+" 條") +
+      kpi("食安 / 衛生警示", risk, risk?"red":"", "蟲、異物、肚痛、唔敢食") +
+      kpi("明示流失客", churn, churn?"red":"", "「唔會再買 / 冇下次」") +
+      kpi("升級投訴風險", escN, escN?"red":"", "投訴 / 消委會 / 商品說明");
+
+    /* --- 每日趨勢 --- */
+    var dHk = dayKeys.map(function(d){ return hk.filter(function(r){ return r.day===d; }).length; });
+    var dWm = dayKeys.map(function(d){ return wm.filter(function(r){ return r.day===d; }).length; });
+    chart("bcTrend", { type:"bar",
+      data:{ labels:dayKeys, datasets:[
+        { label:"HKTVmall", data:dHk, backgroundColor:"#1f6feb" },
+        { label:"街市即日餸", data:dWm, backgroundColor:"#f0a020" }]},
+      options:{ responsive:true, maintainAspectRatio:false, scales:axes(true), plugins:legend(true) } });
+
+    /* --- 問題分類分佈 (多標籤) --- */
+    var tCount = THEMES.map(function(t){ return { t:t, n:rows.filter(function(r){ return r.themes.indexOf(t.key)>=0; }).length }; })
+                       .filter(function(x){ return x.n>0; })
+                       .sort(function(a,b){ return b.n-a.n; });
+    chart("bcTheme1", { type:"bar",
+      data:{ labels:tCount.map(function(x){ return x.t.name; }),
+             datasets:[{ label:"差評數", data:tCount.map(function(x){ return x.n; }),
+                         backgroundColor:tCount.map(function(x){ return x.t.color; }) }]},
+      options:{ indexAxis:"y", responsive:true, maintainAspectRatio:false, scales:axes(false), plugins:legend(false) } });
+
+    /* --- 平台對比 --- */
+    chart("bcTheme2", { type:"bar",
+      data:{ labels:tCount.map(function(x){ return x.t.name; }), datasets:[
+        { label:"HKTVmall", data:tCount.map(function(x){ return hk.filter(function(r){ return r.themes.indexOf(x.t.key)>=0; }).length; }), backgroundColor:"#1f6feb" },
+        { label:"街市即日餸", data:tCount.map(function(x){ return wm.filter(function(r){ return r.themes.indexOf(x.t.key)>=0; }).length; }), backgroundColor:"#f0a020" }]},
+      options:{ indexAxis:"y", responsive:true, maintainAspectRatio:false, scales:axes(false), plugins:legend(true) } });
+
+    /* --- 會員等級 --- */
+    var mem = sortMap(count(rows,function(r){ return r.member||"未知"; }));
+    chart("bcMember", { type:"doughnut",
+      data:{ labels:mem.map(function(x){ return x[0]; }),
+             datasets:[{ data:mem.map(function(x){ return x[1]; }),
+                         backgroundColor:["#f0a020","#3fb950","#58a6ff","#a371f7","#f85149","#8b949e"], borderColor:"#152230" }]},
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:"right", labels:{color:TICK,boxWidth:10,font:{size:11}} } } } });
+
+    /* --- 商戶排行 --- */
+    var byStore = {};
+    rows.forEach(function(r){
+      var k = r.store||"(未知)";
+      if(!byStore[k]) byStore[k]={ id:k, n:0, plat:{}, th:{}, risk:0, churn:0, sample:"" };
+      var o = byStore[k];
+      o.n++; o.plat[r.platform]=1;
+      r.themes.forEach(function(t){ o.th[t]=(o.th[t]||0)+1; });
+      if(r.themes.indexOf("safety")>=0||r.themes.indexOf("hygiene")>=0) o.risk++;
+      if(r.churn) o.churn++;
+      if(!o.sample || (r.content.length>o.sample.length && r.content.length<90)) o.sample=r.content;
+    });
+    var stArr = Object.keys(byStore).map(function(k){ return byStore[k]; }).sort(function(a,b){ return b.n-a.n; });
+    var maxN = stArr.length? stArr[0].n : 1;
+    q("bcStoreTbl").innerHTML =
+      "<thead><tr><th style='width:32px'>#</th><th>商戶 / 檔口</th><th style='width:90px'>平台</th>"+
+      "<th style='width:120px'>差評數</th><th style='width:200px'>主要問題</th><th style='width:80px;text-align:center'>食安/衛生</th>"+
+      "<th style='width:80px;text-align:center'>流失</th><th>代表評論</th></tr></thead><tbody>" +
+      stArr.slice(0,30).map(function(o,i){
+        var top = sortMap(o.th).slice(0,3).map(function(x){ return (THEME_BY_KEY[x[0]]?THEME_BY_KEY[x[0]].name:x[0])+" "+x[1]; }).join("、");
+        var plat = Object.keys(o.plat).map(function(p){ return '<span class="bc-pill '+(p==="HKTVmall"?"hktv":"wme")+'">'+esc(p==="HKTVmall"?"HKTV":"街市")+'</span>'; }).join(" ");
+        return "<tr><td>"+(i+1)+"</td><td><b>"+esc(storeLabel(o.id))+"</b>"+
+          (STORE_NAME[o.id]?"<div class='bc-note'>"+esc(o.id)+"</div>":"")+"</td><td>"+plat+"</td>"+
+          "<td><b style='color:var(--red)'>"+o.n+"</b> <span class='bc-note'>("+pct(o.n,rows.length).toFixed(1)+"%)</span>"+
+          "<div class='bc-bar'><i style='width:"+pct(o.n,maxN).toFixed(1)+"%'></i></div></td>"+
+          "<td class='bc-note'>"+esc(top||"-")+"</td>"+
+          "<td style='text-align:center'>"+(o.risk?"<span class='bc-pill sev'>"+o.risk+"</span>":"-")+"</td>"+
+          "<td style='text-align:center'>"+(o.churn?"<span class='bc-pill sev'>"+o.churn+"</span>":"-")+"</td>"+
+          "<td class='bc-txt bc-note'>"+esc(o.sample.slice(0,80))+"</td></tr>";
+      }).join("") + "</tbody>";
+    q("bcStoreInfo").textContent = "共 "+stArr.length+" 個商戶，顯示頭 "+Math.min(30,stArr.length)+" 名";
+
+    /* --- 問題分類 x 平台 表 --- */
+    q("bcThemeTbl").innerHTML =
+      "<thead><tr><th>問題分類</th><th style='width:90px;text-align:right'>總數</th><th style='width:90px;text-align:right'>佔比</th>"+
+      "<th style='width:110px;text-align:right'>HKTVmall</th><th style='width:110px;text-align:right'>街市即日餸</th><th>典型評論</th></tr></thead><tbody>" +
+      tCount.map(function(x){
+        var ex = rows.filter(function(r){ return r.themes.indexOf(x.t.key)>=0 && r.content.length>10 && r.content.length<70; })[0];
+        return "<tr><td><span style='display:inline-block;width:8px;height:8px;border-radius:2px;background:"+x.t.color+";margin-right:6px'></span><b>"+esc(x.t.name)+"</b></td>"+
+          "<td style='text-align:right'><b>"+x.n+"</b></td>"+
+          "<td style='text-align:right'>"+pct(x.n,rows.length).toFixed(1)+"%</td>"+
+          "<td style='text-align:right'>"+hk.filter(function(r){ return r.themes.indexOf(x.t.key)>=0; }).length+"</td>"+
+          "<td style='text-align:right'>"+wm.filter(function(r){ return r.themes.indexOf(x.t.key)>=0; }).length+"</td>"+
+          "<td class='bc-txt bc-note'>"+esc(ex? ex.content : "-")+"</td></tr>";
+      }).join("") + "</tbody>";
+
+    /* --- HKTV 原始分類 (只有 HKTV 檔有) --- */
+    var hkIssue = sortMap(count(hk,function(r){ return r.srcIssue; }));
+    var hkSev   = sortMap(count(hk,function(r){ return r.srcSev; }));
+    var box = q("bcHkNative");
+    if(hkIssue.length || hkSev.length){
+      box.style.display="block";
+      q("bcHkTbl").innerHTML =
+        "<thead><tr><th>HKTVmall 系統分類 (Issue Type)</th><th style='width:70px;text-align:right'>數量</th>"+
+        "<th style='width:160px'>系統警示級別 (Severity)</th><th style='width:70px;text-align:right'>數量</th></tr></thead><tbody>" +
+        Array.from({length:Math.max(hkIssue.length,hkSev.length)},function(_,i){
+          return "<tr><td>"+esc(hkIssue[i]?hkIssue[i][0]:"")+"</td><td style='text-align:right'>"+(hkIssue[i]?hkIssue[i][1]:"")+"</td>"+
+                 "<td>"+esc(hkSev[i]?hkSev[i][0]:"")+"</td><td style='text-align:right'>"+(hkSev[i]?hkSev[i][1]:"")+"</td></tr>";
+        }).join("") + "</tbody>";
+    } else { box.style.display="none"; }
+
+    /* --- 自動洞察 --- */
+    var ins = [];
+    if(stArr.length){
+      var t1 = stArr[0];
+      ins.push({red:t1.n/rows.length>0.1, html:"<b>集中度：</b>頭 1 個商戶「"+esc(storeLabel(t1.id))+"」佔全部差評 <b>"+t1.n+" 條（"+pct(t1.n,rows.length).toFixed(1)+"%）</b>；頭 5 個商戶合共佔 <b>"+pct(stArr.slice(0,5).reduce(function(s,o){return s+o.n;},0),rows.length).toFixed(1)+"%</b>。集中處理呢幾戶，可以最快拉低整體差評。"});
+    }
+    if(tCount.length){
+      ins.push({red:false, html:"<b>主因：</b>最大問題係「"+esc(tCount[0].t.name)+"」，共 <b>"+tCount[0].n+" 條（"+pct(tCount[0].n,rows.length).toFixed(1)+"%）</b>"+(tCount[1]?"，其次係「"+esc(tCount[1].t.name)+"」"+tCount[1].n+" 條":"")+"。"});
+    }
+    var cc = rows.filter(function(r){ return r.themes.indexOf("coldchain")>=0; }).length;
+    if(cc) ins.push({red:cc>rows.length*0.03, html:"<b>冷鏈：</b>有 <b>"+cc+" 條</b>差評直接提到冰包／保溫袋不足或貨品已溶（夏季高溫時段）。呢類問題係包裝作業可控，改善成本低但見效快。"});
+    if(risk) ins.push({red:true, html:"<b>食安 / 衛生：</b><b>"+risk+" 條</b>差評涉及蟲、異物、臭味後肚痛等，屬最高風險類別，建議逐條人手覆核並即時聯絡商戶。"});
+    if(churn) ins.push({red:churn>rows.length*0.1, html:"<b>客戶流失：</b><b>"+churn+" 條（"+pct(churn,rows.length).toFixed(1)+"%）</b>客人明確寫明「唔會再買／冇下次」，屬即時挽留對象。"});
+    if(escN) ins.push({red:true, html:"<b>升級風險：</b><b>"+escN+" 條</b>提到投訴、消委會或違反商品說明條例，建議優先由 CS 主動跟進。"});
+    var mem1 = mem[0];
+    if(mem1) ins.push({red:false, html:"<b>會員結構：</b>差評最多嚟自 <b>"+esc(mem1[0])+"</b>（"+mem1[1]+" 條，"+pct(mem1[1],rows.length).toFixed(1)+"%），高階會員不滿嘅殺傷力較大。"});
+    q("bcInsight").innerHTML = ins.map(function(o){ return '<div class="bc-ins'+(o.red?" red":"")+'">'+o.html+'</div>'; }).join("");
+
+    renderList(rows);
+  }
+
+  var LIST_LIMIT = 300;
+  function renderList(rows){
+    var show = rows.slice(0, LIST_LIMIT);
+    q("bcListInfo").textContent = "符合 "+rows.length+" 條" + (rows.length>LIST_LIMIT? "（顯示頭 "+LIST_LIMIT+" 條）" : "");
+    q("bcListTbl").innerHTML =
+      "<thead><tr><th style='width:118px'>時間</th><th style='width:70px'>平台</th><th style='width:170px'>商戶</th>"+
+      "<th style='width:46px;text-align:center'>星</th><th>評論內容</th><th style='width:190px'>分類</th><th style='width:120px'>Order</th></tr></thead><tbody>" +
+      show.map(function(r){
+        var tags = r.themes.map(function(k){ var t=THEME_BY_KEY[k]; return t? '<span class="bc-pill" style="border-color:'+t.color+';color:'+t.color+'">'+esc(t.name)+'</span>':""; }).join(" ");
+        if(r.churn) tags += ' <span class="bc-pill sev">流失</span>';
+        if(r.escalate) tags += ' <span class="bc-pill sev">投訴</span>';
+        return "<tr><td class='bc-note'>"+esc(dtstr(r.date))+"</td>"+
+          "<td><span class='bc-pill "+(r.platform==="HKTVmall"?"hktv":"wme")+"'>"+esc(r.platform==="HKTVmall"?"HKTV":"街市")+"</span></td>"+
+          "<td class='bc-note'>"+esc(storeLabel(r.store))+"</td>"+
+          "<td style='text-align:center;color:var(--red)'><b>"+(r.rating==null?"-":r.rating)+"</b></td>"+
+          "<td class='bc-txt'>"+esc(r.content)+"</td>"+
+          "<td>"+(tags||"<span class='bc-note'>未分類</span>")+"</td>"+
+          "<td class='bc-note'>"+esc(r.order)+"</td></tr>";
+      }).join("") + "</tbody>";
+  }
+
+  function exportCsv(){
+    var rows = filtered();
+    var head = ["Review PK","時間","平台","來源檔","商戶ID","商戶名稱","星級","會員","Order ID","SKU","評論內容","問題分類","流失訊號","投訴訊號","HKTV系統分類","HKTV警示級別"];
+    var body = rows.map(function(r){
+      return [ r.pk, dtstr(r.date), r.platform, r.src, r.store, storeLabel(r.store), (r.rating==null?"":r.rating),
+               r.member, r.order, r.sku, r.content,
+               r.themes.map(function(k){ return THEME_BY_KEY[k]?THEME_BY_KEY[k].name:k; }).join("/"),
+               r.churn?"Y":"", r.escalate?"Y":"", r.srcIssue, r.srcSev ];
+    });
+    var csv = [head].concat(body).map(function(a){
+      return a.map(function(v){ v=String(v==null?"":v); return /[",\n]/.test(v)? '"'+v.replace(/"/g,'""')+'"' : v; }).join(",");
+    }).join("\n");
+    var blob = new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"});
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "bad_comment_analysis_"+new Date().toISOString().slice(0,10)+".csv";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  }
+
+  /* ---------- 版面 ---------- */
+  function panelHtml(){
+    return ''
+    + '<div class="card">'
+    +   '<h2>差評分析（過去 7 日）</h2>'
+    +   '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">'
+    +     '<button class="btn sec" id="bcReload" style="width:auto;padding:6px 14px">重新讀取 Drive</button>'
+    +     '<button class="btn ghost" id="bcExport" style="width:auto;padding:6px 14px">匯出 CSV（按目前篩選）</button>'
+    +     '<span class="bc-note" id="bcStatus">未載入</span>'
+    +   '</div>'
+    +   '<div class="bc-note">資料源：Google Drive「P7D Bad Comment Raw」。<b>HKTV-*.xlsx</b> = HKTVmall；<b>WME-*.xlsx</b> = 街市即日餸（Wet Market Express）。每次都自動取資料夾內最新一份。</div>'
+    + '</div>'
+    + '<div class="cards" id="bcKpi"></div>'
+    + '<div class="card"><h2>重點洞察</h2><div id="bcInsight"></div></div>'
+    + '<div class="bc-grid">'
+    +   '<div class="card"><h2>每日差評趨勢</h2><div class="bc-chart"><canvas id="bcTrend"></canvas></div></div>'
+    +   '<div class="card"><h2>會員等級分佈</h2><div class="bc-chart"><canvas id="bcMember"></canvas></div></div>'
+    + '</div>'
+    + '<div class="bc-grid">'
+    +   '<div class="card"><h2>問題分類分佈</h2><div class="bc-chart tall"><canvas id="bcTheme1"></canvas></div>'
+    +     '<div class="bc-note">一條評論可同時屬多個分類，故總和會大於差評總數。</div></div>'
+    +   '<div class="card"><h2>平台問題對比</h2><div class="bc-chart tall"><canvas id="bcTheme2"></canvas></div></div>'
+    + '</div>'
+    + '<div class="card"><h2>問題分類明細</h2><div class="scroll"><table class="thin" id="bcThemeTbl"></table></div></div>'
+    + '<div class="card"><h2>商戶 / 檔口差評排行</h2><div class="bc-note" id="bcStoreInfo" style="margin-bottom:6px"></div>'
+    +   '<div class="scroll" style="max-height:60vh;overflow:auto"><table class="thin" id="bcStoreTbl"></table></div>'
+    +   '<div class="bc-note" style="margin-top:6px">商戶名稱取自 Invisible List 嘅街市檔口對照表；未收錄嘅商戶會顯示原始 Store ID。</div></div>'
+    + '<div class="card" id="bcHkNative" style="display:none"><h2>HKTVmall 系統原生分類</h2>'
+    +   '<div class="scroll"><table class="thin" id="bcHkTbl"></table></div>'
+    +   '<div class="bc-note" style="margin-top:6px">WME 檔案冇提供 Issue Type / Severity 欄位，所以只顯示 HKTVmall 部分；跨平台比較請睇上面嘅自動分類。</div></div>'
+    + '<div class="card"><h2>差評明細</h2>'
+    +   '<div class="bc-flt">'
+    +     '<select id="bcPlat"><option value="">全部平台</option><option value="HKTVmall">HKTVmall</option><option value="街市即日餸">街市即日餸</option></select>'
+    +     '<select id="bcTheme"><option value="">全部分類</option></select>'
+    +     '<select id="bcFlag"><option value="">全部訊號</option><option value="safety">食安 / 衛生</option><option value="churn">明示流失</option><option value="escalate">升級投訴</option></select>'
+    +     '<input type="text" id="bcKw" placeholder="搜尋評論 / 商戶 / Order…">'
+    +     '<span class="bc-note" id="bcListInfo"></span>'
+    +   '</div>'
+    +   '<div class="scroll" style="max-height:70vh;overflow:auto"><table class="thin" id="bcListTbl"></table></div>'
+    + '</div>';
+  }
+
+  function allPanels(){
+    return Array.prototype.slice.call(document.querySelectorAll('[id^="tab-"]'));
+  }
+
+  function inject(){
+    var tabs = document.querySelector(".tabs");
+    var host = q("tab-main");
+    if(!tabs || !host) return false;
+    if(tabs.querySelector('[data-tab="'+TAB_NAME+'"]')) return true;
+
+    var btn = document.createElement("div");
+    btn.className = "tab"; btn.setAttribute("data-tab", TAB_NAME); btn.textContent = "差評分析";
+    tabs.appendChild(btn);
+
+    var panel = document.createElement("div");
+    panel.id = PANEL_ID; panel.style.display = "none";
+    panel.innerHTML = panelHtml();
+    host.parentNode.appendChild(panel);
+
+    /* 分類下拉 */
+    var sel = q("bcTheme");
+    THEMES.forEach(function(t){ var o=document.createElement("option"); o.value=t.key; o.textContent=t.name; sel.appendChild(o); });
+    var oo=document.createElement("option"); oo.value="other"; oo.textContent="未分類"; sel.appendChild(oo);
+
+    btn.addEventListener("click", function(){
+      allPanels().forEach(function(p){ if(p.id!==PANEL_ID) p.style.display="none"; });
+      panel.style.display = "block";
+      document.querySelectorAll(".tabs .tab").forEach(function(el){ el.classList.toggle("on", el===btn); });
+      load(false);
+    });
+    /* 其他 tab 被撳 -> 收埋呢頁 */
+    tabs.addEventListener("click", function(ev){
+      var t = ev.target;
+      while(t && t!==tabs && !(t.classList && t.classList.contains("tab"))) t = t.parentNode;
+      if(!t || t===tabs) return;
+      if(t.getAttribute("data-tab") !== TAB_NAME) panel.style.display = "none";
+    }, true);
+
+    q("bcReload").onclick = function(){ LOADED=false; load(true); };
+    q("bcExport").onclick = exportCsv;
+    ["bcPlat","bcTheme","bcFlag"].forEach(function(id){ var e=q(id); if(e) e.onchange = render; });
+    var kw = q("bcKw");
+    if(kw){ var tmr=null; kw.addEventListener("input", function(){ clearTimeout(tmr); tmr=setTimeout(render,250); }); }
+    return true;
+  }
+
+  function boot(){
+    buildStoreNames();
+    if(!inject()) { setTimeout(boot, 400); return; }
+  }
+  if(document.readyState==="loading"){ document.addEventListener("DOMContentLoaded", boot); } else { boot(); }
+  setTimeout(boot, 1200);
+  setTimeout(function(){ buildStoreNames(); }, 3000);
+})();
+</script>
+
 </body>
 </html>
