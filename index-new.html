@@ -1571,6 +1571,35 @@ if(_isXlsx){
     return n ? n : (id||"-");
   }
 
+  /* ---------- 自營店 (1P)：express（街市即日餸）一律排除 ---------- */
+  /* Store ID 由 CMS「組合商店管理」對照 window.EXCLUDE_1P 名單查出。
+     註：藍妹有機農莊 (HKTVPHY_00119354) 係另一個品牌，唔屬 1P，不在此列。 */
+  var ONE_P_STORE = {
+    "HKTVPHY_00104347":"叮叮菓菜",
+    "HKTVPHY_00114271":"SoFresh Select",
+    "HKTVPHY_00115033":"肉肉鮮生",
+    "HKTVPHY_00099976":"八叔凍肉",
+    "HKTVPHY_00110254":"3小時超市",
+    "HKTVPHY_00116974":"有機農莊",
+    "HKTVPHY_00117211":"紅豆烘焙",
+    "HKTVPHY_00115936":"(直播) 紅豆烘焙",
+    "HKTVPHY_00115261":"嘉頓麵包",
+    "HKTVPHY_00118254":"3小時雪糕",
+    "HKTVPHY_00109768":"九龍城 新興文記牛肉",
+    "HKTVPHY_00109765":"九龍城 李輝記牛肉",
+    "HKTVPHY_00102616":"(直播) 新興文記牛肉 (九龍城)"
+  };
+  var DROP_1P = 0;
+  /* ID 對照為主；如果日後 export 有商戶名，就再用主報表嘅 is1P() 名稱比對做後備，
+     並會先剝走「(直播)」前綴，令直播分身都認得到。 */
+  function is1PStore(id, name){
+    if(ONE_P_STORE[id]) return true;
+    var n = String(name||"").replace(/^\(直播[^)]*\)\s*/,"").trim();
+    if(!n) return false;
+    try{ if(window.is1P && window.is1P(n)) return true; }catch(e){}
+    return false;
+  }
+
   /* ---------- 問題分類 (關鍵字) ---------- */
   /* 由高風險排到低風險，primary theme 取最高優先命中者 */
   var THEMES = [
@@ -1666,6 +1695,9 @@ if(_isXlsx){
       var r = raw[i];
       var content = String(r["Review Content"]||"").trim();
       if(!content) continue;
+      var _sid = String(r["Store ID"]||"").trim();
+      var _snm = String(r["Store Name Zh"]||r["Store Name En"]||"").trim();
+      if(platform==="街市即日餸" && is1PStore(_sid,_snm)){ DROP_1P++; continue; }
       var d = toDate(r["Review Date Time"]);
       var themes = classify(content);
       var rating = parseFloat(r["Customer Rating"]);
@@ -1702,6 +1734,7 @@ if(_isXlsx){
     if(LOADING) return Promise.resolve();
     if(LOADED && !force) return Promise.resolve();
     LOADING = true;
+    DROP_1P = 0;
     say("讀取 Drive 資料夾中…");
     return listFiles().then(function(files){
       var xl = files.filter(function(f){ return /\.xlsx$/i.test(f.name||""); });
@@ -1718,7 +1751,8 @@ if(_isXlsx){
         ROWS.sort(function(a,b){ return (b.date?b.date.getTime():0) - (a.date?a.date.getTime():0); });
         LOADED = true; LOADING = false;
         var names = [hk&&hk.name, wm&&wm.name].filter(Boolean).join("、");
-        say("已載入 " + names + "（共 " + ROWS.length + " 條差評）");
+        say("已載入 " + names + "（共 " + ROWS.length + " 條差評"
+            + (DROP_1P? "，已排除 express 自營店 1P " + DROP_1P + " 條" : "") + "）");
         render();
       });
     }).catch(function(e){
@@ -1961,6 +1995,7 @@ if(_isXlsx){
     +     '<span class="bc-note" id="bcStatus">未載入</span>'
     +   '</div>'
     +   '<div class="bc-note">資料源：Google Drive「P7D Bad Comment Raw」。<b>HKTV-*.xlsx</b> = HKTVmall；<b>WME-*.xlsx</b> = 街市即日餸（Wet Market Express）。每次都自動取資料夾內最新一份。</div>'
+    +   '<div class="bc-note" style="margin-top:4px">Express（街市即日餸）已<b>自動排除自營店 1P</b>（叮叮菓菜、SoFresh Select、肉肉鮮生、八叔凍肉、3小時超市、有機農莊、紅豆烘焙、嘉頓麵包、3小時雪糕、九龍城牛肉檔等），只反映 3P 商戶質素。</div>'
     + '</div>'
     + '<div class="cards" id="bcKpi"></div>'
     + '<div class="card"><h2>重點洞察</h2><div id="bcInsight"></div></div>'
