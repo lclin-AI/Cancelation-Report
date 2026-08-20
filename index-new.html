@@ -1694,10 +1694,14 @@ if(_isXlsx){
     });
     if(!todo.length) return;
     var i = 0, active = 0, dirty = false;
+    /* 只准補上、唔准覆蓋：抓網頁失敗唔應該蓋走 Drive 差評檔（Variant Product Name Zh）
+       或者主報表字典已經畫好嘅商品名。舊版就係喺呢度將已經正確嘅名改成「商品頁搵唔到」。 */
     function paint(sku){
       var v = SKU_NAME[sku];
-      var txt = (v && v!==SKU_NF) ? v : (v===SKU_NF ? "（商品頁搵唔到）" : "");
-      document.querySelectorAll('.bc-skuname[data-sku="'+sku.replace(/"/g,'')+'"]').forEach(function(el){ el.textContent = txt; });
+      document.querySelectorAll('.bc-skuname[data-sku="'+sku.replace(/"/g,'')+'"]').forEach(function(el){
+        if(v && v!==SKU_NF){ el.textContent = v; return; }
+        if(!el.textContent.trim()){ el.textContent = "（商品頁搵唔到）"; }
+      });
     }
     function next(){
       if(i >= todo.length){ if(!active && dirty){ saveSkuCache(); dirty=false; } return; }
@@ -2103,7 +2107,7 @@ if(_isXlsx){
       }).join("") + "</tbody>";
     q("bcSkuInfo").textContent = "共 " + skArr.length + " 個 SKU，顯示頭 " + Math.min(40,skArr.length) +
       " 名（" + withSku.length + " 條差評有 SKU 記錄，" + (rows.length-withSku.length) + " 條冇）";
-    fillSkuNames(skArr.slice(0,40).filter(function(o){ return !skuFromFile(o.id); }).map(function(o){ return o.id; }));
+    fillSkuNames(skArr.slice(0,40).filter(function(o){ return !skuNameOf(o); }).map(function(o){ return o.id; }));
 
     /* --- 問題分類 x 平台 表 --- */
     q("bcThemeTbl").innerHTML =
