@@ -281,6 +281,37 @@ const SETTINGS = {
 };
 const APP_USER="admin";  // NOTE: replace with your real credentials handling
 let ROWS=[]; let VIEW=[]; let CHART=null;
+/* ---------- 全域 SKU 名稱字典 ----------
+   由主報表（Express 取消率 export，內含 sku_id + sku_name_chi）同 MMS SKU*.xlsx 餵入，
+   存 localStorage 並會逐日累積，所以舊 SKU 都留得住名字。差評 tab 靠佢查 Express SKU 名。 */
+window.SKU_NAME_DB=(function(){
+  var KEY="bc_sku_namedb_v1", db={}, t=null;
+  try{ db=JSON.parse(localStorage.getItem(KEY)||"{}")||{}; }catch(e){ db={}; }
+  function save(){ try{ localStorage.setItem(KEY,JSON.stringify(db)); }catch(e){} }
+  function norm(x){ return String(x==null?"":x).trim(); }
+  return {
+    get:function(id){
+      var k=norm(id); if(!k) return "";
+      if(db[k]) return db[k];
+      var k2=k.replace(/[^0-9]+$/,"");            /* 容錯：81352_S_00167S 之類多餘尾碼 */
+      return (k2!==k && db[k2]) ? db[k2] : "";
+    },
+    learn:function(rows,idK,nmK){
+      idK=idK||"sku_id"; nmK=nmK||"sku_name";
+      var dirty=false;
+      (rows||[]).forEach(function(r){
+        if(!r) return;
+        var id=norm(r[idK]), nm=norm(r[nmK]);
+        if(!id||!nm) return;
+        if(db[id]!==nm){ db[id]=nm; dirty=true; }
+      });
+      if(dirty){ clearTimeout(t); t=setTimeout(save,400);
+        if(window.__bcRepaintSkuNames){ try{ window.__bcRepaintSkuNames(); }catch(e){} } }
+      return dirty;
+    },
+    size:function(){ return Object.keys(db).length; }
+  };
+})();
 const $=id=>document.getElementById(id);
 const C=SETTINGS.columns, L=SETTINGS.logic;
 
@@ -349,6 +380,7 @@ function ingest(recs){
       date:String(g("delivery_date"))
     });
   }
+  try{ window.SKU_NAME_DB.learn(ROWS); }catch(e){}
 }
 
 // ---- reason (cancel_type) checkboxes = 分析設定 ----
@@ -1465,6 +1497,7 @@ if(_isXlsx){
     q('ykCancel').textContent=nfmt(ag.totCancel);
     q('ykRate').textContent=(ag.totSold?(ag.totCancel/ag.totSold*100):0).toFixed(2)+'%';
     window.__yArr=ag.arr; window.__yRows=rows;
+    try{ window.SKU_NAME_DB.learn(rows); }catch(e){}
     drawChart(ag.arr); drawFocus(ag.arr); drawFocusTeam(ag.arr); drawCat(rows); drawTeam(rows);
   }
   window.runYesterday=run;
@@ -1589,11 +1622,21 @@ if(_isXlsx){
     var idK = keys.filter(function(k){ return /sku\s*_?\s*id/i.test(k); })[0];
     var nmK = keys.filter(function(k){ return /sku\s*名稱|sku\s*_?\s*name/i.test(k); })[0];
     if(!idK || !nmK) return;
+    /* 只用完整 ID 建索引：_S_ 之後嗰 5 位數字喺唔同店會撞（實測 1757 個尾碼有 277 個撞），
+       用尾碼配對會派錯商品名，所以尾碼只做最後手段（見 skuFromFile）。 */
+    var suffix = {};
     rows.forEach(function(r){
       var id = String(r[idK]||"").trim(), nm = String(r[nmK]||"").trim();
       if(!id || !nm) return;
-      skuKeys(id).forEach(function(k){ if(!SKU_FILE[k]) SKU_FILE[k]=nm; });
+      if(!SKU_FILE[id]) SKU_FILE[id] = nm;
+      var pp = id.split("_S_");
+      if(pp.length>1){
+        var sf = pp[pp.length-1].trim();
+        if(!(sf in suffix)) suffix[sf] = nm; else if(suffix[sf] !== nm) suffix[sf] = null;  /* 撞 = 廢掉 */
+      }
     });
+    Object.keys(suffix).forEach(function(sf){ if(suffix[sf] && !SKU_FILE[sf]) SKU_FILE[sf] = suffix[sf]; });
+    try{ window.SKU_NAME_DB.learn(rows, idK, nmK); }catch(e){}
     SKU_FILE_NAME = fname || "";
   }
   function skuFromFile(id){
@@ -1603,17 +1646,22 @@ if(_isXlsx){
   }
 
   /* ---------- SKU 中文名（來源二）：即時向 HKTVmall 商品頁攞，localStorage 快取 ---------- */
-  var SKU_NAME = {}, SKU_CACHE_KEY = "bc_sku_names_v1", SKU_NF = "\u0001nf";
+  var SKU_NAME = {}, SKU_CACHE_KEY = "bc_sku_names_v2", SKU_NF = "\u0001nf";
+  var HKTV_SKU_RE = /^[A-Z]\d{7}_S_\d+$/i;   /* 只有呢個格式喺 hktvmall.com 攞得到商品頁 */
+  try{ localStorage.removeItem("bc_sku_names_v1"); }catch(e){}
   try{ SKU_NAME = JSON.parse(localStorage.getItem(SKU_CACHE_KEY) || "{}") || {}; }catch(e){ SKU_NAME = {}; }
   function saveSkuCache(){ try{ localStorage.setItem(SKU_CACHE_KEY, JSON.stringify(SKU_NAME)); }catch(e){} }
   function skuTitle(t){
     t = String(t||"").replace(/&amp;/g,"&").replace(/&quot;/g,'"').replace(/&#0?39;/g,"'")
                      .replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/\s+/g," ").trim();
     if(/没有找到|沒有找到|not found|404/i.test(t)) return "";
+    /* HKTVmall 對唔存在嘅 SKU 會回 HTTP 200 + <title>Oops | HKTV Mall</title>，
+       如果照當商品名用，個排行榜就會出現一堆「Oops」。一律當抓唔到。 */
+    if(/^\s*oops\b/i.test(t)) return "";
     var parts = t.split("|").map(function(x){ return x.trim(); }).filter(Boolean);
-    if(parts.length>=3) return parts[1];      /* 店 | 商品 | HKTVmall… */
-    if(parts.length===2) return parts[0];
-    return t;
+    var name = (parts.length>=3) ? parts[1] : (parts.length===2 ? parts[0] : t);
+    if(/^oops$/i.test(name)) return "";
+    return name;
   }
   /* 只讀 <head> 就 abort，每個 SKU 大約 11KB */
   function fetchSkuName(sku){
@@ -1638,7 +1686,12 @@ if(_isXlsx){
       .catch(function(){ return ""; });
   }
   function fillSkuNames(ids){
-    var todo = ids.filter(function(x){ return x && !(x in SKU_NAME); });
+    var todo = ids.filter(function(x){
+      if(!x || (x in SKU_NAME)) return false;
+      if(skuFromFile(x)) return false;                                  /* Drive SKU*.xlsx 已有 */
+      if(window.SKU_NAME_DB && window.SKU_NAME_DB.get(x)) return false; /* 主報表字典已有 */
+      return HKTV_SKU_RE.test(x);                                      /* Express 內部 ID 唔好去爬 */
+    });
     if(!todo.length) return;
     var i = 0, active = 0, dirty = false;
     function paint(sku){
@@ -1885,15 +1938,30 @@ if(_isXlsx){
   }
   function legend(show){ return { legend:{ display:show!==false, labels:{color:TICK,boxWidth:10,font:{size:11}} } }; }
 
+  /* 商品名優先次序：
+     1) Drive SKU*.xlsx（MMS 匯出，最權威）
+     2) 全域 SKU 字典（主報表 / 昨日報表嘅 sku_name_chi，Express SKU 靠呢個）
+     3) 差評檔本身帶嘅 Variant Product Name
+     4) hktvmall.com 商品頁（只限 HKTVmall 格式 ID） */
   function skuNameOf(o){
     var f = skuFromFile(o.id);
     if(f) return f;
+    var d = window.SKU_NAME_DB ? window.SKU_NAME_DB.get(o.id) : "";
+    if(d) return d;
     if(o.name) return o.name;
     var v = SKU_NAME[o.id];
     if(v && v!==SKU_NF) return v;
     if(v===SKU_NF) return "（商品頁搵唔到）";
-    return "";
+    return HKTV_SKU_RE.test(String(o.id||"")) ? "" : "（未有名稱，等主報表資料）";
   }
+  /* 主報表 / SKU 檔遲啲才載入完時，補寫已經畫咗嘅 SKU 名 */
+  window.__bcRepaintSkuNames = function(){
+    document.querySelectorAll(".bc-skuname[data-sku]").forEach(function(el){
+      var id = el.getAttribute("data-sku");
+      var n = skuFromFile(id) || (window.SKU_NAME_DB ? window.SKU_NAME_DB.get(id) : "");
+      if(n) el.textContent = n;
+    });
+  };
 
   /* ---------- 渲染 ---------- */
   function render(){
@@ -2157,7 +2225,7 @@ if(_isXlsx){
     +   '<div class="bc-note" style="margin-top:6px">商戶名稱取自自營店對照表同 Invisible List 嘅街市檔口對照表；未收錄嘅商戶會顯示原始 Store ID。</div></div>'
     + '<div class="card"><h2>SKU / 商品差評排行</h2><div class="bc-note" id="bcSkuInfo" style="margin-bottom:6px"></div>'
     +   '<div class="scroll" style="max-height:60vh;overflow:auto"><table class="thin" id="bcSkuTbl"></table></div>'
-    +   '<div class="bc-note" style="margin-top:6px">商品中文名優先用 Drive 資料夾內嘅 <b>SKU*.xlsx</b>（喺 MMS 商品管理匯出，要有「SKU ID」同「SKU 名稱」兩欄，_S_ 尾碼同全 ID 都認）；如果冇呢個檔或者搵唔到，就會即時去 hktvmall.com 商品頁攞返（會快取喺瀏覽器）。顯示「商品頁搵唔到」即係下架商品，喺 MMS 匯出檔就會有返個名。撳 SKU 可以直接開商品頁。<b>注意：</b>Express（街市即日餸）嘅 export 冇提供 Variant Product ID / Product ID，所以呢個排行實際上只覆蓋到 HKTVmall 嗰部分；如果要 express 嘅 SKU 排行，需要喺 export 加返 SKU 欄位。</div></div>'
+    +   '<div class="bc-note" style="margin-top:6px">商品中文名依次序取：① Drive 資料夾內嘅 <b>SKU*.xlsx</b>（喺 MMS 商品管理匯出，要有「SKU ID」同「SKU 名稱」兩欄）；② <b>主報表／昨日報表</b>嘅 <code>sku_name_chi</code>（會存喺瀏覽器並逐日累積，Express 街市 SKU 主要靠呢個）；③ 差評檔自帶嘅 Variant Product Name；④ 最後才即時去 hktvmall.com 商品頁攞（只限 <code>X0000000_S_00000</code> 呢類 HKTVmall ID）。Express 街市 SKU 用嘅係內部 ID（例：<code>76471_S_00027</code>），喺 hktvmall.com 冇對應商品頁，所以唔會再去爬——舊版就係因為爬到 HKTVmall 嘅錯誤頁（HTTP 200 + 標題「Oops」）而顯示成「Oops」。顯示「商品頁搵唔到」即係下架商品；顯示「未有名稱」即係主報表未見過呢個 SKU，等佢出現喺任何一日嘅取消率報表就會自動補返。撳 SKU 可以直接開商品頁。</div></div>'
     + '<div class="card" id="bcHkNative" style="display:none"><h2>HKTVmall 系統原生分類</h2>'
     +   '<div class="scroll"><table class="thin" id="bcHkTbl"></table></div>'
     +   '<div class="bc-note" style="margin-top:6px">WME 檔案冇提供 Issue Type / Severity 欄位，所以只顯示 HKTVmall 部分；跨平台比較請睇上面嘅自動分類。</div></div>'
