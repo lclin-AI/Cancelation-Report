@@ -176,10 +176,18 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
       <div class="card" style="padding:10px 14px">
         <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
           <div><span class="muted">分析日期（昨日 · 送貨日期）</span><div style="font-size:18px;font-weight:700" id="yDateLab">—</div></div>
+          <label style="display:flex;align-items:center;gap:6px;font-weight:normal">商戶類型
+            <select id="yTier" style="width:auto">
+              <option value="">全部（1P + 3P）</option>
+              <option value="1P">只看 1P 自營</option>
+              <option value="3P" selected>只看 3P 街市檔</option>
+            </select>
+          </label>
           <button class="btn sec" id="yRefresh" style="width:auto;padding:6px 14px">重新計算</button>
           <span class="muted" id="yInfo"></span>
         </div>
-        <div class="muted" style="margin-top:6px">此頁完全獨立：只計送貨日期為昨日嘅資料，所有取消原因全計，唔跟左邊嘅平台 / 車隊 / 原因 / 日期篩選。</div>
+        <div class="muted" style="margin-top:6px">此頁完全獨立：只計送貨日期為昨日嘅資料，所有取消原因全計，唔跟左邊嘅平台 / 車隊 / 原因 / 日期篩選。
+        上面「商戶類型」只影響本頁（預設同主頁一樣係 <b>3P only</b>）。<b>1P</b> = 自營店（叮叮菓菜、肉肉鮮生、SoFresh Select、八叔凍肉、3小時超市、有機農莊、紅豆烘焙、嘉頓麵包、3小時雪糕、九龍城牛肉檔等）；<b>3P</b> = 其餘街市檔口。</div>
       </div>
 
       <div class="cards">
@@ -370,6 +378,8 @@ function ingest(recs){
     if(carRaw.includes("-")){ const after=carRaw.split("-")[1].trim(); if(after.slice(0,2).toUpperCase()===L.express_carline_prefix) team="Express車隊"; }
     ROWS.push({
       order, platform, team, carline:carRaw, merchant:String(g("merchant")||rec["Wet_Market"]||"").trim(),
+      /* 2026-08-26: 留住 Store_Name，令「昨日」頁嘅 1P/3P 判斷同主頁一樣有齊 fallback */
+      store_name:String(rec["Store_Name"]==null?"":rec["Store_Name"]).trim(),
       sku_id:String(g("sku_id")), sku_name:String(g("sku_name")),
       type:String(g("type"))||"(未分類)",
       type2:String(g("type2"))||"(未分類)",
@@ -1375,10 +1385,25 @@ if(_isXlsx){
     try{ if(typeof ROWS!=='undefined' && ROWS) return ROWS; }catch(e){}
     return (window.ROWS||[]);
   }
-  /* 昨日資料：唔理左邊任何 filter，所有取消原因全計 */
-  function ydayRows(){
+  /* 2026-08-26: 1P / 3P 判斷。沿用主報表嘅 window.is1P()（比對店舖名），
+     並試 merchant 同 Store_Name 兩個欄，同主頁嘅 fallback 鏈一致。 */
+  function rowTier(r){
+    try{
+      if(window.is1P && (window.is1P(r.merchant) || window.is1P(r.store_name))) return "1P";
+    }catch(e){}
+    return "3P";
+  }
+  function yTierVal(){ var e=q("yTier"); return e? e.value : ""; }
+
+  /* 昨日資料：唔理左邊任何 filter，所有取消原因全計；只受本頁嘅商戶類型影響 */
+  function ydayRowsAll(){
     var d=ydayHK();
     return allRows().filter(function(r){ return normDate(r.date)===d; });
+  }
+  function ydayRows(){
+    var t=yTierVal();
+    var rows=ydayRowsAll();
+    return t? rows.filter(function(r){ return rowTier(r)===t; }) : rows;
   }
   function isCan(r){ return r.refund>0; }
   function nfmt(x){ return Math.round(x).toLocaleString('en-US'); }
@@ -1489,7 +1514,14 @@ if(_isXlsx){
         var list=Object.keys(ds).sort().slice(-5).join('、');
         info.innerHTML='<span style="color:#f0a020">昨日（'+d+'）冇任何資料。檔案內最近嘅送貨日期：'+(list||'（無）')+'</span>';
       }
-      else info.textContent='昨日共 '+rows.length.toLocaleString('en-US')+' 行資料（總資料 '+total.toLocaleString('en-US')+' 行）';
+      else {
+        var _all=ydayRowsAll();
+        var _1p=0; _all.forEach(function(r){ if(rowTier(r)==='1P') _1p++; });
+        var _3p=_all.length-_1p;
+        info.textContent='昨日共 '+rows.length.toLocaleString('en-US')+' 行資料'
+          +'（該日全部 '+_all.length.toLocaleString('en-US')+' 行：1P '+_1p.toLocaleString('en-US')
+          +'、3P '+_3p.toLocaleString('en-US')+'；總資料 '+total.toLocaleString('en-US')+' 行）';
+      }
     }
     var ag=aggregate(rows);
     q('ykSku').textContent=ag.arr.length.toLocaleString('en-US');
@@ -1530,6 +1562,7 @@ if(_isXlsx){
     }, true);
 
     var rf=q('yRefresh'); if(rf) rf.onclick=run;
+    var tr=q('yTier'); if(tr) tr.onchange=run;
     var ap=q('yapplyTh'); if(ap) ap.onclick=function(){ if(window.__yArr){ drawFocus(window.__yArr); drawFocusTeam(window.__yArr); drawChart(window.__yArr); } };
     var e1=q('yexpFocus'); if(e1) e1.onclick=function(){ ycsv('focus_yesterday.csv',[['SKU ID','SKU 名稱','店舖','出售量','取消量','取消率%']].concat((window.__yFocus||[]).map(function(o){return [o.sku_id,o.name,o.store||'',o.sold,o.cancel,o.rate.toFixed(2)];}))); };
     var e2=q('yexpFocusTeam'); if(e2) e2.onclick=function(){ ycsv('focus_by_team_yesterday.csv',[['SKU ID','SKU 名稱','店舖','出售量','取消量(含OOS)','取消率%(含OOS)','取消量(不含OOS)','取消率%(不含OOS)','Express 出售量','Express 取消量(含OOS)','Express 取消率%(含OOS)','Express 取消量(不含OOS)','Express 取消率%(不含OOS)','HKTVmall 出售量','HKTVmall 取消量(含OOS)','HKTVmall 取消率%(含OOS)','HKTVmall 取消量(不含OOS)','HKTVmall 取消率%(不含OOS)']].concat((window.__yFocusTeam||[]).map(function(o){return [o.sku_id,o.name,o.store||'',o.sold,o.cancel,o.rate.toFixed(2),o.cancel-o.oC,o.nR.toFixed(2),o.eSold,o.eC,o.eR.toFixed(2),o.eC-o.eOC,o.eNR.toFixed(2),o.hSold,o.hC,o.hR.toFixed(2),o.hC-o.hOC,o.hNR.toFixed(2)];}))); };
