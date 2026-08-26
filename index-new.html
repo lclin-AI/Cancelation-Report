@@ -1775,7 +1775,12 @@ if(_isXlsx){
      SHOW_3P=true 代表 3P 街市檔口一樣計入；改回 false 即回復舊行為。 */
   var SHOW_3P = true;          /* 保留變數避免舊引用出錯，已不再用於過濾 */
   var CNT_1P = 0, CNT_3P = 0;  /* 每次 load 統計 1P / 3P 條數 */
-  var HAS_ALL_RATINGS = false; /* 來源檔有冇好評 → 決定「差評率」可否用真分母 */
+  /* 來源檔有冇好評 → 決定「差評率」可否用真分母。
+     必須逐平台判斷：WME 係二元評分（1/5），HKTVmall 係 1-5 星，兩個檔嘅 rating filter
+     可以獨立設定（RRMP_RATINGS_WMEXPRESS / _HKTVMALL），一個平台有好評唔代表另一個有。 */
+  var HAS_ALL_BY_PLAT = {};
+  function hasDenom(plat){ return !!HAS_ALL_BY_PLAT[plat]; }
+  function anyDenom(){ for(var k in HAS_ALL_BY_PLAT){ if(HAS_ALL_BY_PLAT[k]) return true; } return false; }
   /* ID 對照為主；如果日後 export 有商戶名，就再用主報表嘅 is1P() 名稱比對做後備，
      並會先剝走「(直播)」前綴，令直播分身都認得到。 */
   function is1PStore(id, name){
@@ -1971,11 +1976,15 @@ if(_isXlsx){
         ROWS.sort(function(a,b){ return (b.date?b.date.getTime():0) - (a.date?a.date.getTime():0); });
         LOADED = true; LOADING = false;
         var names = [hk&&hk.name, wm&&wm.name].filter(Boolean).join("、");
-        HAS_ALL_RATINGS = ROWS.some(function(r){ return r.rating!=null && r.rating>=3; });
+        HAS_ALL_BY_PLAT = {};
+        ROWS.forEach(function(r){ if(!(r.platform in HAS_ALL_BY_PLAT)) HAS_ALL_BY_PLAT[r.platform]=false;
+          if(r.rating!=null && r.rating>=3) HAS_ALL_BY_PLAT[r.platform]=true; });
         var _bad = ROWS.filter(function(r){ return r.isBad; }).length;
+        var _withD = Object.keys(HAS_ALL_BY_PLAT).filter(hasDenom);
+        var _noD   = Object.keys(HAS_ALL_BY_PLAT).filter(function(k){ return !hasDenom(k); });
         say("已載入 " + names + "（差評 " + _bad + " 條 / 1P " + CNT_1P + "、3P " + CNT_3P + "）"
-            + (HAS_ALL_RATINGS ? "；來源檔含好評 " + (ROWS.length-_bad) + " 條，差評率用真分母"
-                               : "；來源檔只有差評 → 差評率無分母，暫顯示「佔總差評 %」")
+            + (_withD.length ? "；" + _withD.join("、") + " 含好評 " + (ROWS.length-_bad) + " 條，差評率用真分母" : "")
+            + (_noD.length   ? "；" + _noD.join("、") + " 只有差評 → 該平台差評率無分母" : "")
             + (SKU_FILE_NAME? "；SKU 名對照：" + SKU_FILE_NAME : ""));
         render();
       });
@@ -2304,7 +2313,10 @@ if(_isXlsx){
   function top15rows(skArr, TOT){
     return skArr.map(function(o){
       var tot = TOT[o.id] || o.n;          /* 冇好評資料時退化成 bad 本身 */
-      return { id:o.id, nameObj:o, store:o.store, bad:o.n, tot:tot,
+      /* 只有當呢個 SKU 全部所在平台都有好評，個「差評率」才有意義 */
+      var plats = Object.keys(o.plat||{});
+      var hd = plats.length>0 && plats.every(hasDenom);
+      return { id:o.id, nameObj:o, store:o.store, bad:o.n, tot:tot, hasDenom:hd,
                pct: tot? (o.n/tot*100) : 0,
                th: sortMap(o.th).slice(0,2).map(function(x){
                      return (THEME_BY_KEY[x[0]]?THEME_BY_KEY[x[0]].name:x[0])+" "+x[1]; }).join("、"),
@@ -2323,9 +2335,14 @@ if(_isXlsx){
       var nm = skuNameOf(r.nameObj) || "";
       var cells = "<td style='text-align:right'><b style='color:var(--red)'>"+r.bad+"</b></td>";
       if(showPct){
+        if(!r.hasDenom){
+          cells += "<td style='text-align:right' class='bc-note'>&mdash;</td>"
+                 + "<td style='text-align:right' class='bc-note' title='該平台來源檔未含好評，計唔到分母'>&mdash;</td>";
+        } else {
         var hot = r.pct>=50 ? "color:var(--red)" : (r.pct>=25 ? "color:var(--acc)" : "");
         cells += "<td style='text-align:right' class='bc-note'>"+r.tot+"</td>"
                + "<td style='text-align:right;"+hot+"'><b>"+r.pct.toFixed(0)+"%</b></td>";
+        }
       } else {
         cells += "<td style='text-align:right' class='bc-note'>"+pct(r.bad,badTotal).toFixed(1)+"%</td>";
       }
@@ -2343,26 +2360,31 @@ if(_isXlsx){
     var all = top15rows(skArr, TOT);
     /* 榜 A：絕對數 */
     var A = all.slice().sort(function(a,b){ return b.bad-a.bad || b.pct-a.pct; }).slice(0,15);
-    q("bcTop15Abs").innerHTML = top15tbl(A, badTotal, HAS_ALL_RATINGS);
+    q("bcTop15Abs").innerHTML = top15tbl(A, badTotal, anyDenom());
     /* 榜 B：百分比（要夠樣本）；冇好評資料時退化為「佔總差評」 */
     var m = minN();
     var B, note;
-    if(HAS_ALL_RATINGS){
-      B = all.filter(function(r){ return r.tot>=m; })
-             .sort(function(a,b){ return b.pct-a.pct || b.bad-a.bad; }).slice(0,15);
-      var full = all.filter(function(r){ return r.pct===100; });
+    if(anyDenom()){
+      var pool = all.filter(function(r){ return r.hasDenom; });
+      B = pool.filter(function(r){ return r.tot>=m; })
+              .sort(function(a,b){ return b.pct-a.pct || b.bad-a.bad; }).slice(0,15);
+      var full = pool.filter(function(r){ return r.pct===100; });
+      var excl = Object.keys(HAS_ALL_BY_PLAT).filter(function(k){ return !hasDenom(k); });
       note = "差評率 = 該 SKU 差評 ÷ 該 SKU 全部評論。門檻：總評 ≥ " + m
-           + "。全平台有 " + full.length + " 個 SKU 差評率 100%（其中 "
-           + full.filter(function(r){ return r.tot<m; }).length + " 個總評 < " + m + "，已被門檻濾走）。";
+           + "。有分母嘅 SKU 中 " + full.length + " 個差評率 100%（其中 "
+           + full.filter(function(r){ return r.tot<m; }).length + " 個總評 < " + m + "，已被門檻濾走）。"
+           + (excl.length? " ⚠ " + excl.join("、") + " 嘅來源檔未含好評，該平台 SKU 唔會出現喺呢個榜。" : "");
     } else {
       B = all.slice().sort(function(a,b){ return b.bad-a.bad; }).slice(0,15);
-      note = "⚠ 來源檔只有差評，冇分母，計唔到真差評率，呢個榜暫時顯示「佔總差評 %」。"
-           + "要有真差評率，RRMP export 要拆走 rating filter（1★+5★ 全出）。";
+      note = "⚠ 兩個來源檔都只有差評，冇分母，計唔到真差評率，呢個榜暫時顯示「佔總差評 %」。"
+           + "要有真差評率：喺 Apps Script「P7D Bad Comment Export」加 Script Property "
+           + "RRMP_RATINGS_WMEXPRESS = 1,2,3,4,5（只影響 WME，HKTV 不變）。";
     }
-    q("bcTop15Pct").innerHTML = top15tbl(B, badTotal, HAS_ALL_RATINGS);
+    q("bcTop15Pct").innerHTML = top15tbl(B, badTotal, anyDenom());
     if(q("bcTop15PctNote")) q("bcTop15PctNote").textContent = note;
     if(q("bcTop15AbsNote")) q("bcTop15AbsNote").textContent =
-      "按差評條數排" + (HAS_ALL_RATINGS? "，並顯示同期總評同差評率。" : "。總評欄要等 export 出好評才有。");
+      "按差評條數排" + (anyDenom()? "，並顯示同期總評同差評率（來源檔未含好評嘅平台顯示 —）。"
+                                 : "。總評欄要等 export 出好評才有。");
   }
 
   /* ---------- 單一 SKU drill-down（2026-08-26） ---------- */
@@ -2387,10 +2409,12 @@ if(_isXlsx){
            + "<div class='val"+(cls?" "+cls:"")+"'>"+val+"</div>"
            + (sub?"<div class='bc-note' style='margin-top:4px'>"+sub+"</div>":"")+"</div>";
     }
+    var _hd = hasDenom(o0.platform);
     var kpis = k("差評", bad.length, "red", "")
-      + (HAS_ALL_RATINGS ? k("總評", mine.length, "", "")
+      + (_hd ? k("總評", mine.length, "", "")
            + k("差評率", (mine.length? (bad.length/mine.length*100).toFixed(0):"0")+"%",
-               (bad.length/Math.max(1,mine.length)>=0.5?"red":""), "") : "")
+               (bad.length/Math.max(1,mine.length)>=0.5?"red":""), "")
+           : k("總評", "—", "", o0.platform+" 未含好評"))
       + k("平均星", avg==null?"-":avg.toFixed(2), "", "")
       + k("食安/衛生", bad.filter(function(r){ return r.themes.indexOf("safety")>=0||r.themes.indexOf("hygiene")>=0; }).length, "", "")
       + k("明示流失", bad.filter(function(r){ return r.churn; }).length, "", "")
