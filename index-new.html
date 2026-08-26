@@ -1824,28 +1824,46 @@ if(_isXlsx){
   /* 2026-08-26 詞庫增補：由本週 413 條差評人手歸納，補足原有 regex 漏網詞。
      並新增兩個分類（處理/切法、熟度）。generic 必須留最後。 */
   var THEME_EXTRA = {
-    spoiled : /壞|爆皮|內壞|入邊壞|起渣|多鬚|流湯|黏殼|黐殼|生蟲|發哂|漏蛋黃|臭豆|有酸味|酸味/i,
-    damage  : /壓凹|凹曬|凹晒|出晒水|出哂水|瘀黑|壓傷|壓扁晒|破損/i,
-    mismatch: /唔係苗|不是.{0,4}苗|唔似.{0,6}苗|極粗身|花甲王|唔係花甲|唔係王|唔係日本|可能唔係|有可能唔係/i,
-    weight  : /一半食指|手指甲|得半斤|只有半斤|得四條|一包四條|十分細粒/i,
-    cs      : /客服竟然|覆我話|投訴無門|不獲退款|不補送|唔補送|唔退錢/i
+    /* 第一輪（8-26 上午）+ 第二輪（8-26 下午，逐條讀完 474 條差評後補） */
+    spoiled : /壞|爆皮|內壞|入邊壞|起渣|多鬚|流湯|黏殼|黐殼|生蟲|發哂|漏蛋黃|臭豆|有酸味|酸味|變味|唔係太新鮮|變成咁|唔新鲜|不太新鮮|唔太新鮮|吳夠新鮮|吳新鮮|吾夠新鮮|新觧|有銹|生銹|轉黃|轉啡|轉色|黃咗|黃葉|咁黃|太黃|豬騷味|騷味|好太陣|陣味|血水|濕晒|好濕|沒有生命|冇生命|僵硬|變紫|扔了|掉咗|唔軟熟|存放耐/i,
+    damage  : /壓凹|凹曬|凹晒|出晒水|出哂水|瘀黑|壓傷|壓扁晒|破損|斷咗|斷手斷腳|穿咗|鬆晒|折了|半死|爆到|汁流|經歷咗|可憐|bruis|squash|squish|dent|misshapen/i,
+    mismatch: /唔係苗|不是.{0,4}苗|唔似.{0,6}苗|極粗身|花甲王|唔係花甲|唔係王|唔係日本|可能唔係|有可能唔係|跟描述|同描述|描述唔同|描述不同|完全不同|完全唔同|假嘅|假蛋|假貨|似係染|送來不是|送來一袋|收到的是|收到貨才知|部位|冬瓜頭|大堂菜|比例|賣相|核突|唔係[^，。！]{0,8}(菜|魚|蝦|蟹|薑|果|肉|腸|蛋|斑|班)|吾係[^，。！]{0,8}(菜|魚|蝦|蟹|薑|果|肉|腸|蛋|斑|班)|不是[^，。！]{0,8}(菜|魚|蝦|蟹|薑|果|肉|腸|蛋|斑|班)/i,
+    weight  : /一半食指|手指甲|得半斤|只有半斤|得四條|一包四條|十分細粒|又大又細|太瘦|冇乜肉|無乜肉|細到|勁細|好細件|少肉|那麼少|餡少|餡量太少|冇修過|修完冇|barely any/i,
+    cs      : /客服竟然|覆我話|投訴無門|不獲退款|不補送|唔補送|唔退錢|無得退|冇下文|取消唔到|唔通知|不通知|如何解決|非常不滿|C\s?S\b/i,
+    /* 以下係第二輪新增嘅 key */
+    taste   : /苦(?!瓜)|^酸[。！!]?$|太甜|好甜|過甜|非常酸|太辣|唔香|不香|調味|太濃|過濃|又鹹又甜|腥味|有腥|雪味|不粉糯|唔粉|唔糯|好un|太硬|味道淡|淡淡|皮厚|乾爭|唔拉絲|雪到|有d乾|有啲乾|柴(?!魚)|\bOld\b|\bBitter\b|\bsour\b/i,
+    missing : /冇收到|沒收到|沒有收到|無收到|唔收到|未收到|無送到|冇送到|未送到|無送嚟|冇送嚟|無得評|只付一條|訂兩條|俾少左|比少左|少左一|少咗一份|完全沒有收到/i,
+    prep    : /去魚鱗|魚鱗|remarks|備註|較位|切到|一岩一忽|去皮|切件|硬骨/i,
+    coldchain: /結冰|有.{0,3}溶|少少溶|包裝.{0,4}濕|\bwet\b/i,
+    generic : /^劣$|咁嬲|自己睇相|劣質|麻麻哋|麻麻地|^麻麻|送黎係咁|送嚟係咁|竟然咁|今次雞|叔叔地|poor shopping/i
   };
-  THEMES.forEach(function(t){
-    var ex = THEME_EXTRA[t.key];
-    if(ex){ try{ t.re = new RegExp(t.re.source + "|" + ex.source, "i"); }catch(e){} }
-  });
   (function(){
     var extra = [
       { key:"prep", name:"處理 / 切法", color:"#f2cc60",
         re:/切骨|直切|橫切|碎骨|斬件|斬多|起骨|劏|清洗|未去鱗|去鱗|切法|邊角位/i },
       { key:"ripeness", name:"熟度 / 生熟", color:"#7ee787",
-        re:/未熟|太生|好生|仲青|又係綠色|綠色|過熟|熟爛|太熟|熟度|擺幾耐/i }
+        re:/未熟|太生|好生|仲青|又係綠色|綠色|過熟|熟爛|太熟|熟度|擺幾耐/i },
+      { key:"liveshow", name:"直播 / 買手落單", color:"#d2a8ff",
+        re:/直播|主播|買手|專員|liveshow|落單時|落咗remarks/i },
+      { key:"labeling", name:"標示 / 日期 / 產地", color:"#ffa657",
+        re:/原身日期|改咗.{0,4}日期|改左.{0,4}日期|食用期|到期日|短期貨|無標明|冇標明|未標明|標示|大陸製造|產地|Product of|tamago/i }
     ];
     var gi = -1;
     for(var i=0;i<THEMES.length;i++){ if(THEMES[i].key==="generic"){ gi=i; break; } }
     if(gi<0) gi = THEMES.length;
     THEMES.splice.apply(THEMES, [gi,0].concat(extra));
   })();
+  /* 詞庫合併要喺新分類加入之後才做，否則 prep / ripeness / liveshow / labeling
+     嘅 THEME_EXTRA 補充詞唔會生效。 */
+  THEMES.forEach(function(t){
+    var ex = THEME_EXTRA[t.key];
+    if(ex){ try{ t.re = new RegExp(t.re.source + "|" + ex.source, "i"); }catch(e){} }
+  });
+  /* 內容正面但評 1 星 → 疑似錯評。只在冇任何其他分類命中時才標記，
+     否則「之前買過好新鮮，但今次咁黃」呢類會被誤判成正評。 */
+  var PRAISE_KEY = "praise";
+  var PRAISE_RE  = /非常之新鮮|好新鮮|很新鮮|非常滿意|大讚|好正常/i;
+  THEMES.push({ key:PRAISE_KEY, name:"疑似錯評 (內容正面)", color:"#3fb950", re:PRAISE_RE });
   var THEME_BY_KEY = {}; THEMES.forEach(function(t){ THEME_BY_KEY[t.key]=t; });
 
   /* 流失 / 升級訊號 */
@@ -1855,7 +1873,11 @@ if(_isXlsx){
   function classify(text){
     var t = String(text||"");
     var hits = [];
-    for(var i=0;i<THEMES.length;i++){ if(THEMES[i].re.test(t)) hits.push(THEMES[i].key); }
+    for(var i=0;i<THEMES.length;i++){
+      if(THEMES[i].key===PRAISE_KEY) continue;   /* 留到最後才判 */
+      if(THEMES[i].re.test(t)) hits.push(THEMES[i].key);
+    }
+    if(!hits.length && PRAISE_RE.test(t)) hits.push(PRAISE_KEY);
     return hits;
   }
 
