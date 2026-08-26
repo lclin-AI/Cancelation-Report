@@ -1546,6 +1546,11 @@ if(_isXlsx){
 <style>
 /* ===== 差評分析 (P7D Bad Comment) ===== */
 #tab-badcmt .bc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
+#tab-badcmt .bc-drill{cursor:pointer;border-bottom:1px dashed var(--line)}
+#tab-badcmt .bc-drill:hover{color:var(--grn) !important;border-bottom-color:var(--grn)}
+.bc-modal{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.62);align-items:flex-start;justify-content:center;padding:24px;overflow:auto}
+.bc-modal-box{max-width:1060px;width:100%;max-height:none}
+.bc-modal-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
 #tab-badcmt .bc-chart{position:relative;height:260px}
 #tab-badcmt .bc-chart.tall{height:320px}
 #tab-badcmt .bc-pill{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;border:1px solid var(--line);color:var(--mut);white-space:nowrap}
@@ -1599,6 +1604,7 @@ if(_isXlsx){
     }catch(e){}
     STORE_NAME["B0812001"] = STORE_NAME["B0812001"] || "HKTVmall 超市 / 即日餸";
     try{ Object.keys(ONE_P_STORE).forEach(function(k){ STORE_NAME[k] = STORE_NAME[k] || ONE_P_STORE[k]; }); }catch(e){}
+    try{ Object.keys(STORE_NAME_EXTRA).forEach(function(k){ STORE_NAME[k] = STORE_NAME[k] || STORE_NAME_EXTRA[k]; }); }catch(e){}
   }
   function storeLabel(id){
     var n = STORE_NAME[id];
@@ -1729,8 +1735,11 @@ if(_isXlsx){
     "HKTVPHY_00118254":"3小時雪糕",
     "HKTVPHY_00109768":"九龍城 新興文記牛肉",
     "HKTVPHY_00109765":"九龍城 李輝記牛肉",
-    "HKTVPHY_00102616":"(直播) 新興文記牛肉 (九龍城)",
-    /* --- 2026-08-26 加入 3P 街市檔口（P7D 差評 >= 3 條）--- */
+    "HKTVPHY_00102616":"(直播) 新興文記牛肉 (九龍城)"
+  };
+  /* 2026-08-26: 3P 街市檔口名稱對照（純顯示用，唔會令佢哋被當成 1P）。
+     由本週 P7D 差評 >= 3 條嘅檔口整理。 */
+  var STORE_NAME_EXTRA = {
     "HKTVPHY_00114964":"港灣海產",
     "HKTVPHY_00103360":"(直播) 祥盛水果 (九龍城)",
     "HKTVPHY_00102625":"(直播) 星華海鮮 (屯門)",
@@ -1764,7 +1773,9 @@ if(_isXlsx){
   var DROP_3P = 0;
   /* 2026-08-26: 原本 WME 只保留 1P 檔，會 drop 掉約 62% 街市差評（本週 257 條）。
      SHOW_3P=true 代表 3P 街市檔口一樣計入；改回 false 即回復舊行為。 */
-  var SHOW_3P = true;
+  var SHOW_3P = true;          /* 保留變數避免舊引用出錯，已不再用於過濾 */
+  var CNT_1P = 0, CNT_3P = 0;  /* 每次 load 統計 1P / 3P 條數 */
+  var HAS_ALL_RATINGS = false; /* 來源檔有冇好評 → 決定「差評率」可否用真分母 */
   /* ID 對照為主；如果日後 export 有商戶名，就再用主報表嘅 is1P() 名稱比對做後備，
      並會先剝走「(直播)」前綴，令直播分身都認得到。 */
   function is1PStore(id, name){
@@ -1805,6 +1816,31 @@ if(_isXlsx){
     { key:"generic",  name:"整體質素差 (籠統)",      color:"#57606a",
       re:/差|失望|唔靚|不靚|唔得|一般|質素|质素|品質|品质|唔掂|不掂|離晒譜|離譜|离谱|唔建議|不建議|唔滿意|不满意|參差|参差|如圖|垃圾|冇誠信|黑店|古惑|忘記初心|不會再購買|唔會再購買|唔食得|不能食|又係咁樣|缺貨|加緊檢查|無法理解|无法理解|勁嬲|好嬲|How\?|Refer to/i }
   ];
+  /* 2026-08-26 詞庫增補：由本週 413 條差評人手歸納，補足原有 regex 漏網詞。
+     並新增兩個分類（處理/切法、熟度）。generic 必須留最後。 */
+  var THEME_EXTRA = {
+    spoiled : /壞|爆皮|內壞|入邊壞|起渣|多鬚|流湯|黏殼|黐殼|生蟲|發哂|漏蛋黃|臭豆|有酸味|酸味/i,
+    damage  : /壓凹|凹曬|凹晒|出晒水|出哂水|瘀黑|壓傷|壓扁晒|破損/i,
+    mismatch: /唔係苗|不是.{0,4}苗|唔似.{0,6}苗|極粗身|花甲王|唔係花甲|唔係王|唔係日本|可能唔係|有可能唔係/i,
+    weight  : /一半食指|手指甲|得半斤|只有半斤|得四條|一包四條|十分細粒/i,
+    cs      : /客服竟然|覆我話|投訴無門|不獲退款|不補送|唔補送|唔退錢/i
+  };
+  THEMES.forEach(function(t){
+    var ex = THEME_EXTRA[t.key];
+    if(ex){ try{ t.re = new RegExp(t.re.source + "|" + ex.source, "i"); }catch(e){} }
+  });
+  (function(){
+    var extra = [
+      { key:"prep", name:"處理 / 切法", color:"#f2cc60",
+        re:/切骨|直切|橫切|碎骨|斬件|斬多|起骨|劏|清洗|未去鱗|去鱗|切法|邊角位/i },
+      { key:"ripeness", name:"熟度 / 生熟", color:"#7ee787",
+        re:/未熟|太生|好生|仲青|又係綠色|綠色|過熟|熟爛|太熟|熟度|擺幾耐/i }
+    ];
+    var gi = -1;
+    for(var i=0;i<THEMES.length;i++){ if(THEMES[i].key==="generic"){ gi=i; break; } }
+    if(gi<0) gi = THEMES.length;
+    THEMES.splice.apply(THEMES, [gi,0].concat(extra));
+  })();
   var THEME_BY_KEY = {}; THEMES.forEach(function(t){ THEME_BY_KEY[t.key]=t; });
 
   /* 流失 / 升級訊號 */
@@ -1872,7 +1908,10 @@ if(_isXlsx){
       if(!content) continue;
       var _sid = String(r["Store ID"]||"").trim();
       var _snm = String(r["Store Name Zh"]||r["Store Name En"]||"").trim();
-      if(platform==="街市即日餸" && !SHOW_3P && !is1PStore(_sid,_snm)){ DROP_3P++; continue; }
+      /* 2026-08-26: 唔再 drop 3P；改為標記 tier，交由介面篩選。
+         1P = HKTVmall 自營（大街市 鮮貨部）+ 街市自營檔；3P = 街市第三方檔口。 */
+      var _tier = (platform==="HKTVmall" || is1PStore(_sid,_snm)) ? "1P" : "3P";
+      if(_tier==="3P") CNT_3P++; else CNT_1P++;
       var d = toDate(r["Review Date Time"]);
       var themes = classify(content);
       var rating = parseFloat(r["Customer Rating"]);
@@ -1894,6 +1933,9 @@ if(_isXlsx){
         zone: String(r["Zone"]||"").trim(),
         srcIssue: String(r["Issue Type with Highest priority"]||"").trim(),
         srcSev: String(r["Alert Severity Level"]||"").trim(),
+        tier: _tier,
+        hasImg: /^(true|1|y|yes)$/i.test(String(r["Product Image"]||"").trim()),
+        isBad: (isNaN(rating) ? true : rating<=2),
         themes: themes,
         primary: themes.length? themes[0] : "other",
         churn: CHURN_RE.test(content),
@@ -1909,7 +1951,7 @@ if(_isXlsx){
     if(LOADING) return Promise.resolve();
     if(LOADED && !force) return Promise.resolve();
     LOADING = true;
-    DROP_3P = 0;
+    DROP_3P = 0; CNT_1P = 0; CNT_3P = 0;
     say("讀取 Drive 資料夾中…");
     return listFiles().then(function(files){
       var xl = files.filter(function(f){ return /\.xlsx$/i.test(f.name||""); });
@@ -1929,8 +1971,11 @@ if(_isXlsx){
         ROWS.sort(function(a,b){ return (b.date?b.date.getTime():0) - (a.date?a.date.getTime():0); });
         LOADED = true; LOADING = false;
         var names = [hk&&hk.name, wm&&wm.name].filter(Boolean).join("、");
-        say("已載入 " + names + "（共 " + ROWS.length + " 條差評"
-            + (DROP_3P? "，已排除 express 3P 商戶 " + DROP_3P + " 條" : "") + "）"
+        HAS_ALL_RATINGS = ROWS.some(function(r){ return r.rating!=null && r.rating>=3; });
+        var _bad = ROWS.filter(function(r){ return r.isBad; }).length;
+        say("已載入 " + names + "（差評 " + _bad + " 條 / 1P " + CNT_1P + "、3P " + CNT_3P + "）"
+            + (HAS_ALL_RATINGS ? "；來源檔含好評 " + (ROWS.length-_bad) + " 條，差評率用真分母"
+                               : "；來源檔只有差評 → 差評率無分母，暫顯示「佔總差評 %」")
             + (SKU_FILE_NAME? "；SKU 名對照：" + SKU_FILE_NAME : ""));
         render();
       });
@@ -1944,6 +1989,17 @@ if(_isXlsx){
   function count(arr, fn){ var m={}; arr.forEach(function(x){ var k=fn(x); if(k==null||k==="") return; m[k]=(m[k]||0)+1; }); return m; }
   function sortMap(m){ return Object.keys(m).map(function(k){ return [k,m[k]]; }).sort(function(a,b){ return b[1]-a[1]; }); }
 
+  /* tier + 平台：分母同分子共用嘅基本範圍 */
+  function tierPlatOk(r){
+    var p = q("bcPlat") ? q("bcPlat").value : "";
+    var ti = q("bcTier") ? q("bcTier").value : "";
+    if(p && r.platform!==p) return false;
+    if(ti && r.tier!==ti) return false;
+    return true;
+  }
+  /* 分母：符合 tier/平台嘅全部評論（好評+差評）。故意唔套用關鍵字/分類篩選，否則分母會失真。 */
+  function filteredAll(){ return ROWS.filter(tierPlatOk); }
+
   function filtered(){
     var p = q("bcPlat") ? q("bcPlat").value : "";
     var t = q("bcTheme") ? q("bcTheme").value : "";
@@ -1951,6 +2007,8 @@ if(_isXlsx){
     var f = q("bcFlag") ? q("bcFlag").value : "";
     var re = null; if(k){ try{ re = new RegExp(k,"i"); }catch(e){ re = null; } }
     return ROWS.filter(function(r){
+      if(!r.isBad) return false;
+      if(!tierPlatOk(r)) return false;
       if(p && r.platform!==p) return false;
       if(t && r.themes.indexOf(t)<0 && !(t==="other"&&r.themes.length===0)) return false;
       if(f==="churn" && !r.churn) return false;
@@ -2004,6 +2062,9 @@ if(_isXlsx){
   function render(){
     if(!ROWS.length) return;
     var rows = filtered();
+    var allRows = filteredAll();
+    var TOT_SKU = {};
+    allRows.forEach(function(r){ if(r.sku) TOT_SKU[r.sku] = (TOT_SKU[r.sku]||0)+1; });
     var hk = rows.filter(function(r){ return r.platform==="HKTVmall"; });
     var wm = rows.filter(function(r){ return r.platform==="街市即日餸"; });
 
@@ -2030,7 +2091,9 @@ if(_isXlsx){
       kpi("涉及商戶", Object.keys(stores).length, "", "平均每戶 "+(Object.keys(stores).length? (rows.length/Object.keys(stores).length).toFixed(1):"0")+" 條") +
       kpi("食安 / 衛生警示", risk, risk?"red":"", "蟲、異物、肚痛、唔敢食") +
       kpi("明示流失客", churn, churn?"red":"", "「唔會再買 / 冇下次」") +
-      kpi("升級投訴風險", escN, escN?"red":"", "投訴 / 消委會 / 商品說明");
+      kpi("升級投訴風險", escN, escN?"red":"", "投訴 / 消委會 / 商品說明") +
+      kpi("未分類", rows.filter(function(r){ return !r.themes.length; }).length, "",
+          "關鍵字未命中，需擴充詞庫");
 
     /* --- 每日趨勢 --- */
     var dHk = dayKeys.map(function(d){ return hk.filter(function(r){ return r.day===d; }).length; });
@@ -2127,7 +2190,7 @@ if(_isXlsx){
         var url = "https://www.hktvmall.com/p/" + encodeURIComponent(o.id);
         return "<tr><td>"+(i+1)+"</td>"+
           "<td><a href='"+esc(url)+"' target='_blank' rel='noopener' style='color:var(--grn);text-decoration:none'><b>"+esc(o.id)+"</b></a>"+
-          "<div class='bc-note bc-skuname' data-sku='"+esc(o.id)+"' style='color:var(--txt)'>"+ esc(skuNameOf(o)) +"</div>"+
+          "<div class='bc-note bc-skuname bc-drill' data-sku='"+esc(o.id)+"' data-drill='"+esc(o.id)+"' title='撳一下睇呢個 SKU 全部差評' style='color:var(--txt)'>"+ esc(skuNameOf(o)) +"</div>"+
           "<div class='bc-note'>"+esc(storeLabel(o.store))+"</div></td>"+
           "<td>"+plat+"</td>"+
           "<td><b style='color:var(--red)'>"+o.n+"</b> <span class='bc-note'>("+pct(o.n,withSku.length).toFixed(1)+"%)</span>"+
@@ -2141,6 +2204,9 @@ if(_isXlsx){
     q("bcSkuInfo").textContent = "共 " + skArr.length + " 個 SKU，顯示頭 " + Math.min(40,skArr.length) +
       " 名（" + withSku.length + " 條差評有 SKU 記錄，" + (rows.length-withSku.length) + " 條冇）";
     fillSkuNames(skArr.slice(0,40).filter(function(o){ return !skuNameOf(o); }).map(function(o){ return o.id; }));
+
+    /* --- Top 15 兩種排名（2026-08-26 新增） --- */
+    renderTop15(skArr, TOT_SKU, withSku.length);
 
     /* --- 問題分類 x 平台 表 --- */
     q("bcThemeTbl").innerHTML =
@@ -2232,6 +2298,163 @@ if(_isXlsx){
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
   }
 
+  /* ---------- Top 15 SKU：絕對數 + 百分比（2026-08-26） ---------- */
+  function minN(){ var e=q("bcMinN"); var v=e? parseInt(e.value,10) : 5; return (isNaN(v)||v<1)?1:v; }
+
+  function top15rows(skArr, TOT){
+    return skArr.map(function(o){
+      var tot = TOT[o.id] || o.n;          /* 冇好評資料時退化成 bad 本身 */
+      return { id:o.id, nameObj:o, store:o.store, bad:o.n, tot:tot,
+               pct: tot? (o.n/tot*100) : 0,
+               th: sortMap(o.th).slice(0,2).map(function(x){
+                     return (THEME_BY_KEY[x[0]]?THEME_BY_KEY[x[0]].name:x[0])+" "+x[1]; }).join("、"),
+               risk:o.risk, churn:o.churn };
+    });
+  }
+
+  function top15tbl(list, badTotal, showPct){
+    var head = "<thead><tr><th style='width:30px'>#</th><th>SKU / 商品</th>"
+             + "<th style='width:76px;text-align:right'>差評</th>"
+             + (showPct ? "<th style='width:76px;text-align:right'>總評</th><th style='width:80px;text-align:right'>差評率</th>"
+                        : "<th style='width:96px;text-align:right'>佔總差評</th>")
+             + "<th style='width:170px'>主要問題</th></tr></thead><tbody>";
+    if(!list.length) return head + "<tr><td colspan='6' class='bc-note'>冇符合條件嘅 SKU</td></tr></tbody>";
+    return head + list.map(function(r,i){
+      var nm = skuNameOf(r.nameObj) || "";
+      var cells = "<td style='text-align:right'><b style='color:var(--red)'>"+r.bad+"</b></td>";
+      if(showPct){
+        var hot = r.pct>=50 ? "color:var(--red)" : (r.pct>=25 ? "color:var(--acc)" : "");
+        cells += "<td style='text-align:right' class='bc-note'>"+r.tot+"</td>"
+               + "<td style='text-align:right;"+hot+"'><b>"+r.pct.toFixed(0)+"%</b></td>";
+      } else {
+        cells += "<td style='text-align:right' class='bc-note'>"+pct(r.bad,badTotal).toFixed(1)+"%</td>";
+      }
+      return "<tr><td>"+(i+1)+"</td>"
+        + "<td><span class='bc-drill' data-drill='"+esc(r.id)+"' title='撳一下睇全部差評'><b>"+esc(r.id)+"</b></span>"
+        + "<div class='bc-note bc-skuname bc-drill' data-sku='"+esc(r.id)+"' data-drill='"+esc(r.id)+"' style='color:var(--txt)'>"+esc(nm)+"</div>"
+        + "<div class='bc-note'>"+esc(storeLabel(r.store))+"</div></td>"
+        + cells
+        + "<td class='bc-note'>"+esc(r.th||"-")+"</td></tr>";
+    }).join("") + "</tbody>";
+  }
+
+  function renderTop15(skArr, TOT, badTotal){
+    if(!q("bcTop15Abs")) return;
+    var all = top15rows(skArr, TOT);
+    /* 榜 A：絕對數 */
+    var A = all.slice().sort(function(a,b){ return b.bad-a.bad || b.pct-a.pct; }).slice(0,15);
+    q("bcTop15Abs").innerHTML = top15tbl(A, badTotal, HAS_ALL_RATINGS);
+    /* 榜 B：百分比（要夠樣本）；冇好評資料時退化為「佔總差評」 */
+    var m = minN();
+    var B, note;
+    if(HAS_ALL_RATINGS){
+      B = all.filter(function(r){ return r.tot>=m; })
+             .sort(function(a,b){ return b.pct-a.pct || b.bad-a.bad; }).slice(0,15);
+      var full = all.filter(function(r){ return r.pct===100; });
+      note = "差評率 = 該 SKU 差評 ÷ 該 SKU 全部評論。門檻：總評 ≥ " + m
+           + "。全平台有 " + full.length + " 個 SKU 差評率 100%（其中 "
+           + full.filter(function(r){ return r.tot<m; }).length + " 個總評 < " + m + "，已被門檻濾走）。";
+    } else {
+      B = all.slice().sort(function(a,b){ return b.bad-a.bad; }).slice(0,15);
+      note = "⚠ 來源檔只有差評，冇分母，計唔到真差評率，呢個榜暫時顯示「佔總差評 %」。"
+           + "要有真差評率，RRMP export 要拆走 rating filter（1★+5★ 全出）。";
+    }
+    q("bcTop15Pct").innerHTML = top15tbl(B, badTotal, HAS_ALL_RATINGS);
+    if(q("bcTop15PctNote")) q("bcTop15PctNote").textContent = note;
+    if(q("bcTop15AbsNote")) q("bcTop15AbsNote").textContent =
+      "按差評條數排" + (HAS_ALL_RATINGS? "，並顯示同期總評同差評率。" : "。總評欄要等 export 出好評才有。");
+  }
+
+  /* ---------- 單一 SKU drill-down（2026-08-26） ---------- */
+  function drill(sku){
+    var wrap = q("bcDrillWrap"); if(!wrap) return;
+    var mine = ROWS.filter(function(r){ return r.sku===sku && tierPlatOk(r); });
+    var bad  = mine.filter(function(r){ return r.isBad; });
+    if(!mine.length) return;
+    var o0 = bad[0] || mine[0];
+    var nm = skuFromFile(sku) || (window.SKU_NAME_DB? window.SKU_NAME_DB.get(sku):"") || o0.skuName || "";
+    var rated = bad.filter(function(r){ return r.rating!=null; });
+    var avg = rated.length? (rated.reduce(function(a,b){ return a+b.rating; },0)/rated.length) : null;
+    var th = {}; bad.forEach(function(r){ r.themes.forEach(function(k){ th[k]=(th[k]||0)+1; }); });
+    var thArr = sortMap(th);
+    var uncls = bad.filter(function(r){ return !r.themes.length; }).length;
+    var days = {}; bad.forEach(function(r){ if(r.day!=="-") days[r.day]=(days[r.day]||0)+1; });
+    var dayArr = Object.keys(days).sort();
+    var withImg = bad.filter(function(r){ return r.hasImg; }).length;
+
+    function k(lab,val,cls,sub){
+      return "<div class='kpi' style='flex:1 1 130px;min-width:130px'><div class='lab'>"+esc(lab)+"</div>"
+           + "<div class='val"+(cls?" "+cls:"")+"'>"+val+"</div>"
+           + (sub?"<div class='bc-note' style='margin-top:4px'>"+sub+"</div>":"")+"</div>";
+    }
+    var kpis = k("差評", bad.length, "red", "")
+      + (HAS_ALL_RATINGS ? k("總評", mine.length, "", "")
+           + k("差評率", (mine.length? (bad.length/mine.length*100).toFixed(0):"0")+"%",
+               (bad.length/Math.max(1,mine.length)>=0.5?"red":""), "") : "")
+      + k("平均星", avg==null?"-":avg.toFixed(2), "", "")
+      + k("食安/衛生", bad.filter(function(r){ return r.themes.indexOf("safety")>=0||r.themes.indexOf("hygiene")>=0; }).length, "", "")
+      + k("明示流失", bad.filter(function(r){ return r.churn; }).length, "", "")
+      + k("有相", withImg, "", "客人上載照片");
+
+    var thHtml = thArr.length ? thArr.map(function(x){
+        var t = THEME_BY_KEY[x[0]];
+        return "<span class='bc-pill' style='border-color:"+(t?t.color:"#666")+";color:"+(t?t.color:"#999")+"'>"
+             + esc(t?t.name:x[0])+" "+x[1]+"</span>";
+      }).join(" ") : "<span class='bc-note'>全部未分類</span>";
+    if(uncls) thHtml += " <span class='bc-pill'>未分類 "+uncls+"</span>";
+
+    var dayHtml = dayArr.map(function(d){ return esc(d)+"："+days[d]; }).join("　");
+
+    var list = bad.slice().sort(function(a,b){ return (b.date?b.date.getTime():0)-(a.date?a.date.getTime():0); });
+    var tbl = "<table class='thin'><thead><tr><th style='width:112px'>時間</th>"
+      + "<th style='width:40px;text-align:center'>星</th><th>評論原文</th>"
+      + "<th style='width:180px'>分類</th><th style='width:118px'>Order</th>"
+      + "<th style='width:40px;text-align:center'>相</th></tr></thead><tbody>"
+      + list.map(function(r){
+          var tags = r.themes.map(function(kk){ var t=THEME_BY_KEY[kk];
+            return t? "<span class='bc-pill' style='border-color:"+t.color+";color:"+t.color+"'>"+esc(t.name)+"</span>":""; }).join(" ");
+          if(r.churn) tags += " <span class='bc-pill sev'>流失</span>";
+          if(r.escalate) tags += " <span class='bc-pill sev'>投訴</span>";
+          return "<tr><td class='bc-note'>"+esc(dtstr(r.date))+"</td>"
+            + "<td style='text-align:center;color:var(--red)'><b>"+(r.rating==null?"-":r.rating)+"</b></td>"
+            + "<td class='bc-txt'>"+esc(r.content)+"</td>"
+            + "<td>"+(tags||"<span class='bc-note'>未分類</span>")+"</td>"
+            + "<td class='bc-note'>"+esc(r.order)+"</td>"
+            + "<td style='text-align:center'>"+(r.hasImg?"[相]":"")+"</td></tr>";
+        }).join("") + "</tbody></table>";
+
+    q("bcDrillBody").innerHTML =
+        "<div class='bc-note' style='margin-bottom:2px'>"+esc(storeLabel(o0.store))
+      + "　<span class='bc-pill "+(o0.platform==="HKTVmall"?"hktv":"wme")+"'>"+esc(o0.platform==="HKTVmall"?"HKTV":"街市")+"</span>"
+      + "　<span class='bc-pill'>"+esc(o0.tier)+"</span></div>"
+      + "<div style='font-size:15px;font-weight:600;margin-bottom:2px'>"+esc(nm||"（未有中文名）")+"</div>"
+      + "<div class='bc-note' style='margin-bottom:10px'><code>"+esc(sku)+"</code>"
+      + "　<a href='https://www.hktvmall.com/p/"+encodeURIComponent(sku)+"' target='_blank' rel='noopener' style='color:var(--grn)'>開商品頁</a></div>"
+      + "<div class='cards' style='margin-bottom:10px'>"+kpis+"</div>"
+      + "<div style='margin-bottom:8px'><div class='bc-note' style='margin-bottom:4px'>問題分類</div>"+thHtml+"</div>"
+      + (dayHtml? "<div class='bc-note' style='margin-bottom:10px'>逐日分佈："+dayHtml+"</div>" : "")
+      + "<div class='bc-note' style='margin-bottom:4px'>全部 "+bad.length+" 條差評原文</div>"
+      + "<div class='scroll' style='max-height:46vh;overflow:auto'>"+tbl+"</div>";
+    wrap.style.display = "flex";
+    window.__bcDrillSku = sku;
+  }
+
+  function drillCsv(){
+    var sku = window.__bcDrillSku; if(!sku) return;
+    var bad = ROWS.filter(function(r){ return r.sku===sku && tierPlatOk(r) && r.isBad; });
+    var head = ["Review PK","時間","平台","Tier","商戶","星級","Order ID","SKU","評論內容","問題分類","流失","投訴","有相"];
+    var body = bad.map(function(r){ return [ r.pk, dtstr(r.date), r.platform, r.tier, storeLabel(r.store),
+      (r.rating==null?"":r.rating), r.order, r.sku, r.content,
+      r.themes.map(function(k){ return THEME_BY_KEY[k]?THEME_BY_KEY[k].name:k; }).join("/"),
+      r.churn?"Y":"", r.escalate?"Y":"", r.hasImg?"Y":"" ]; });
+    var csv = [head].concat(body).map(function(a){ return a.map(function(v){ v=String(v==null?"":v);
+      return /[",\n]/.test(v)? '"'+v.replace(/"/g,'""')+'"' : v; }).join(","); }).join("\n");
+    var blob = new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"});
+    var a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+    a.download = "bad_comment_"+sku+".csv";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  }
+
   /* ---------- 版面 ---------- */
   function panelHtml(){
     return ''
@@ -2240,13 +2463,26 @@ if(_isXlsx){
     +   '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">'
     +     '<button class="btn sec" id="bcReload" style="width:auto;padding:6px 14px">重新讀取 Drive</button>'
     +     '<button class="btn ghost" id="bcExport" style="width:auto;padding:6px 14px">匯出 CSV（按目前篩選）</button>'
+    +     '<select id="bcTier" title="1P / 3P 分頁"><option value="">全部（1P + 3P）</option><option value="1P">只看 1P 自營</option><option value="3P">只看 3P 街市檔</option></select>'
     +     '<span class="bc-note" id="bcStatus">未載入</span>'
     +   '</div>'
     +   '<div class="bc-note">資料源：Google Drive「P7D Bad Comment Raw」。<b>HKTV-*.xlsx</b> = HKTVmall；<b>WME-*.xlsx</b> = 街市即日餸（Wet Market Express）。每次都自動取資料夾內最新一份。</div>'
-    +   '<div class="bc-note" style="margin-top:4px">Express（街市即日餸）<b>只顯示自營店 1P</b>（叮叮菓菜、SoFresh Select、肉肉鮮生、八叔凍肉、3小時超市、有機農莊、紅豆烘焙、嘉頓麵包、3小時雪糕、九龍城牛肉檔等），3P 商戶已排除。</div>'
+    +   '<div class="bc-note" style="margin-top:4px"><b>2026-08-26 起唔再排除 3P。</b>街市即日餸全部檔口都計入，上面下拉可以切「全部 / 只看 1P / 只看 3P」。<b>1P</b> = HKTVmall 自營（大街市 鮮貨部）+ 街市自營檔（叮叮菓菜、SoFresh Select、肉肉鮮生、八叔凍肉、3小時超市、有機農莊、紅豆烘焙、嘉頓麵包、3小時雪糕、九龍城牛肉檔）；<b>3P</b> = 其餘街市第三方檔口。</div>'
     + '</div>'
     + '<div class="cards" id="bcKpi"></div>'
     + '<div class="card"><h2>重點洞察</h2><div id="bcInsight"></div></div>'
+    + '<div class="card"><h2>Top 15 差評 SKU</h2>'
+    +   '<div class="bc-flt"><label class="bc-note">百分比榜門檻：總評 &ge; <input type="number" id="bcMinN" value="5" min="1" style="width:66px"></label></div>'
+    +   '<div class="bc-grid">'
+    +     '<div><div class="bc-note" style="margin-bottom:4px"><b>A. 按差評條數（絕對數）</b></div>'
+    +       '<div class="scroll" style="max-height:56vh;overflow:auto"><table class="thin" id="bcTop15Abs"></table></div>'
+    +       '<div class="bc-note" id="bcTop15AbsNote" style="margin-top:6px"></div></div>'
+    +     '<div><div class="bc-note" style="margin-bottom:4px"><b>B. 按差評百分比</b></div>'
+    +       '<div class="scroll" style="max-height:56vh;overflow:auto"><table class="thin" id="bcTop15Pct"></table></div>'
+    +       '<div class="bc-note" id="bcTop15PctNote" style="margin-top:6px"></div></div>'
+    +   '</div>'
+    +   '<div class="bc-note" style="margin-top:6px">撳 SKU ID 或商品名，可以睇該 SKU 全部差評原文、分類分佈同逐日分佈。</div>'
+    + '</div>'
     + '<div class="bc-grid">'
     +   '<div class="card"><h2>每日差評趨勢</h2><div class="bc-chart"><canvas id="bcTrend"></canvas></div></div>'
     +   '<div class="card"><h2>會員等級分佈</h2><div class="bc-chart"><canvas id="bcMember"></canvas></div></div>'
@@ -2275,6 +2511,18 @@ if(_isXlsx){
     +     '<span class="bc-note" id="bcListInfo"></span>'
     +   '</div>'
     +   '<div class="scroll" style="max-height:70vh;overflow:auto"><table class="thin" id="bcListTbl"></table></div>'
+    + '</div>'
+    + '<div id="bcDrillWrap" class="bc-modal">'
+    +   '<div class="card bc-modal-box">'
+    +     '<div class="bc-modal-head">'
+    +       '<h2 id="bcDrillTitle" style="margin:0">SKU 差評總結</h2>'
+    +       '<div style="display:flex;gap:8px">'
+    +         '<button class="btn ghost" id="bcDrillCsv" style="width:auto;padding:5px 12px">匯出此 SKU CSV</button>'
+    +         '<button class="btn sec" id="bcDrillClose" style="width:auto;padding:5px 12px">關閉</button>'
+    +       '</div>'
+    +     '</div>'
+    +     '<div id="bcDrillBody"></div>'
+    +   '</div>'
     + '</div>';
   }
 
@@ -2318,7 +2566,24 @@ if(_isXlsx){
 
     q("bcReload").onclick = function(){ LOADED=false; load(true); };
     q("bcExport").onclick = exportCsv;
-    ["bcPlat","bcTheme","bcFlag"].forEach(function(id){ var e=q(id); if(e) e.onchange = render; });
+    ["bcPlat","bcTheme","bcFlag","bcTier"].forEach(function(id){ var e=q(id); if(e) e.onchange = render; });
+    var mn = q("bcMinN");
+    if(mn){ var t2=null; mn.addEventListener("input", function(){ clearTimeout(t2); t2=setTimeout(render,250); }); }
+    /* SKU drill-down：事件委派，避免逐格綁 handler */
+    panel.addEventListener("click", function(ev){
+      var t = ev.target;
+      while(t && t!==panel && !(t.getAttribute && t.getAttribute("data-drill"))) t = t.parentNode;
+      if(!t || t===panel) return;
+      ev.preventDefault();
+      drill(t.getAttribute("data-drill"));
+    });
+    var dw = q("bcDrillWrap");
+    if(dw){
+      q("bcDrillClose").onclick = function(){ dw.style.display="none"; };
+      q("bcDrillCsv").onclick = drillCsv;
+      dw.addEventListener("click", function(ev){ if(ev.target===dw) dw.style.display="none"; });
+      document.addEventListener("keydown", function(ev){ if(ev.key==="Escape") dw.style.display="none"; });
+    }
     var kw = q("bcKw");
     if(kw){ var tmr=null; kw.addEventListener("input", function(){ clearTimeout(tmr); tmr=setTimeout(render,250); }); }
     return true;
