@@ -1982,7 +1982,10 @@ if(_isXlsx){
         var _bad = ROWS.filter(function(r){ return r.isBad; }).length;
         var _withD = Object.keys(HAS_ALL_BY_PLAT).filter(hasDenom);
         var _noD   = Object.keys(HAS_ALL_BY_PLAT).filter(function(k){ return !hasDenom(k); });
-        say("已載入 " + names + "（差評 " + _bad + " 條 / 1P " + CNT_1P + "、3P " + CNT_3P + "）"
+        /* tier 數必須只計差評 —— CNT_1P/CNT_3P 係逐行累加，來源檔含好評之後就會偏高 */
+        var _b1p = ROWS.filter(function(r){ return r.isBad && r.tier==="1P"; }).length;
+        var _b3p = ROWS.filter(function(r){ return r.isBad && r.tier==="3P"; }).length;
+        say("已載入 " + names + "（差評 " + _bad + " 條 / 1P " + _b1p + "、3P " + _b3p + "）"
             + (_withD.length ? "；" + _withD.join("、") + " 含好評 " + (ROWS.length-_bad) + " 條，差評率用真分母" : "")
             + (_noD.length   ? "；" + _noD.join("、") + " 只有差評 → 該平台差評率無分母" : "")
             + (SKU_FILE_NAME? "；SKU 名對照：" + SKU_FILE_NAME : ""));
