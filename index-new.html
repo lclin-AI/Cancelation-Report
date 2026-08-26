@@ -1729,9 +1729,42 @@ if(_isXlsx){
     "HKTVPHY_00118254":"3小時雪糕",
     "HKTVPHY_00109768":"九龍城 新興文記牛肉",
     "HKTVPHY_00109765":"九龍城 李輝記牛肉",
-    "HKTVPHY_00102616":"(直播) 新興文記牛肉 (九龍城)"
+    "HKTVPHY_00102616":"(直播) 新興文記牛肉 (九龍城)",
+    /* --- 2026-08-26 加入 3P 街市檔口（P7D 差評 >= 3 條）--- */
+    "HKTVPHY_00114964":"港灣海產",
+    "HKTVPHY_00103360":"(直播) 祥盛水果 (九龍城)",
+    "HKTVPHY_00102625":"(直播) 星華海鮮 (屯門)",
+    "HKTVPHY_00113528":"豐隆肉食",
+    "HKTVPHY_00096205":"(直播) 東興海鮮",
+    "HKTVPHY_00077613":"洋洋海鮮 (屯門)",
+    "HKTVPHY_00110068":"(直播) 德美海產",
+    "HKTVPHY_00102976":"(直播) 茵記蔬果 (灣仔)",
+    "HKTVPHY_00115827":"(直播) 港食肉",
+    "HKTVPHY_00078126":"榮興蔬菜 (將軍澳)",
+    "HKTVPHY_00078501":"永富食品公司 (九龍城)",
+    "HKTVPHY_00087010":"(直播) 花語拾光",
+    "HKTVPHY_00078192":"達興蔬菜 (大埔墟)",
+    "HKTVPHY_00077661":"蘇記冰鮮魚 (屯門)",
+    "HKTVPHY_00077586":"肥媽蔬菜 (屯門)",
+    "HKTVPHY_00088234":"安田農產品 (屯門)",
+    "HKTVPHY_00078411":"祥盛水果 (九龍城)",
+    "HKTVPHY_00078492":"何記菜檔 (荃灣)",
+    "HKTVPHY_00109099":"(直播) 日日漁有限公司",
+    "HKTVPHY_00107458":"(直播)欄之選",
+    "HKTVPHY_00119429":"五豐新鮮豬",
+    "HKTVPHY_00108139":"(直播) 香港家豬有限公司",
+    "HKTVPHY_00078132":"錦鑫鮮果 (大埔墟)",
+    "HKTVPHY_00084396":"培記蔬菜 (九龍城)",
+    "HKTVPHY_00089209":"五穀豐登 (屯門)",
+    "HKTVPHY_00111854":"(直播) 肯尼海鮮",
+    "HKTVPHY_00102628":"(直播) 黃燊記 (屯門)",
+    "HKTVPHY_00107470":"(直播)其奧 花生糖專門店",
+    "HKTVPHY_00113531":"(直播) 台灣皇上皇"
   };
   var DROP_3P = 0;
+  /* 2026-08-26: 原本 WME 只保留 1P 檔，會 drop 掉約 62% 街市差評（本週 257 條）。
+     SHOW_3P=true 代表 3P 街市檔口一樣計入；改回 false 即回復舊行為。 */
+  var SHOW_3P = true;
   /* ID 對照為主；如果日後 export 有商戶名，就再用主報表嘅 is1P() 名稱比對做後備，
      並會先剝走「(直播)」前綴，令直播分身都認得到。 */
   function is1PStore(id, name){
@@ -1839,7 +1872,7 @@ if(_isXlsx){
       if(!content) continue;
       var _sid = String(r["Store ID"]||"").trim();
       var _snm = String(r["Store Name Zh"]||r["Store Name En"]||"").trim();
-      if(platform==="街市即日餸" && !is1PStore(_sid,_snm)){ DROP_3P++; continue; }
+      if(platform==="街市即日餸" && !SHOW_3P && !is1PStore(_sid,_snm)){ DROP_3P++; continue; }
       var d = toDate(r["Review Date Time"]);
       var themes = classify(content);
       var rating = parseFloat(r["Customer Rating"]);
