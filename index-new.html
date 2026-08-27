@@ -127,6 +127,81 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
       <div class="tab" data-tab="cancattr">取消歸因</div>
     </div>
 
+    <!-- 取消歸因 (Cancellation -> Supplier) — 2026-08-27
+         資料源 A：主報表已載入嘅取消 export (ROWS)，有真 delivery_date。
+         資料源 B：Google Sheet「QC App」→ tab「Supplier Map」，由 IMAX 每日寫入
+                   (AI/imax_supplier_map.py)。
+         嚴格模式：當日出貨涉多過一個供應商，該 (SKU × 收貨日) 分子分母一齊剔。
+         只覆蓋經 TY8F 倉嘅 1P（叮叮菓菜 / DINGDONG FRESH）；3P 街市檔冇 PO。 -->
+    <div id="tab-cancattr" style="display:none">
+      <div class="cards">
+        <div class="kpi"><div class="lab">已歸因訂單行</div><div class="val" id="caLines">-</div></div>
+        <div class="kpi"><div class="lab">取消／退款行</div><div class="val" id="caCanc">-</div></div>
+        <div class="kpi"><div class="lab">取消率</div><div class="val red" id="caRate">-</div></div>
+        <div class="kpi"><div class="lab">缺貨率</div><div class="val" id="caOos">-</div></div>
+        <div class="kpi"><div class="lab">剔除（當日多供應商）</div><div class="val" id="caDrop">-</div></div>
+      </div>
+
+      <div class="card">
+        <h2>篩選</h2>
+        <div class="muted">
+          收貨日 <input type="date" id="caFrom" style="width:150px;display:inline-block">
+          至 <input type="date" id="caTo" style="width:150px;display:inline-block">
+          　最少訂單行 <input type="text" id="caMin" value="200" style="width:70px;display:inline-block">
+          <button class="btn sec" id="caApply">套用</button>
+          <button class="btn ghost" id="caReload">重新讀取 Supplier Map</button>
+          <button class="btn ghost" id="caExp">匯出 CSV</button>
+        </div>
+        <div class="muted" id="caStatus" style="margin-top:8px"></div>
+        <div class="muted" id="caWarn" style="margin-top:6px;line-height:1.7"></div>
+      </div>
+
+      <div class="card">
+        <h2>供應商取消率（按 IMAX 出貨 batch 歸因）</h2>
+        <div class="scroll">
+          <table class="thin" id="caTable">
+            <thead><tr>
+        <th data-sort="supplier" style="text-align:left">供應商</th>
+        <th data-sort="lines">訂單行</th>
+        <th data-sort="qty">出售量</th>
+        <th data-sort="canc">取消行</th>
+        <th data-sort="rate">取消率</th>
+        <th data-sort="oos">缺貨</th>
+        <th data-sort="oosRate">缺貨率</th>
+        <th data-sort="quality">質素差</th>
+        <th data-sort="missing">缺漏</th>
+        <th data-sort="wrong">送錯貨</th>
+        <th data-sort="broken">外觀損壞</th>
+        <th data-sort="other">其他</th>
+            </tr></thead>
+            <tbody id="caBody"><tr><td colspan="12" class="muted">未載入</td></tr></tbody>
+          </table>
+        </div>
+        <div class="muted" style="margin-top:8px">點供應商名可展開逐張單明細。</div>
+      </div>
+
+      <div class="card">
+        <h2>單日事件排行（同一供應商 × SKU × 收貨日）</h2>
+        <div class="scroll">
+          <table class="thin"><thead><tr>
+            <th>收貨日</th><th style="text-align:left">SKU</th><th style="text-align:left">供應商</th>
+            <th>類型</th><th>單數</th><th>Batch</th><th>PO</th>
+          </tr></thead><tbody id="caEvBody"><tr><td colspan="7" class="muted">未載入</td></tr></tbody></table>
+        </div>
+      </div>
+
+      <div class="card" id="caDetailWrap">
+        <h2 id="caDetailHead">明細</h2>
+        <div class="scroll">
+          <table class="thin"><thead><tr>
+            <th>收貨日</th><th style="text-align:left">Order</th><th style="text-align:left">SKU</th>
+            <th>類型</th><th style="text-align:left">Reason</th><th>量</th><th>已出</th><th>退款</th>
+            <th>Batch</th><th>PO</th><th>收貨時間</th>
+          </tr></thead><tbody id="caDetBody"><tr><td colspan="11" class="muted">點上面嘅供應商名</td></tr></tbody></table>
+        </div>
+      </div>
+    </div>
+
     <div id="tab-main">
       <div class="cards">
         <div class="kpi"><div class="lab">SKU 數目</div><div class="val" id="kSku">-</div></div>
@@ -2686,80 +2761,6 @@ if(_isXlsx){
 })();
 </script>
 
-
-<!-- ===================================================================
-     取消歸因 (Cancellation -> Supplier)  — 2026-08-27
-     資料源 A：主報表已載入嘅取消 export (ROWS)。有真 delivery_date。
-     資料源 B：Google Sheet「QC App」→ tab「Supplier Map」，由 IMAX
-               每日寫入 (imax_supplier_map.py)：
-               material | date | supplier | vendorCode | po | batch |
-               batch_recv | issued_qty | n_batch | n_supplier
-     嚴格模式：n_supplier > 1 嘅 (SKU × 收貨日) 整格剔除，分子分母一致剔。
-     只覆蓋經 TY8F 倉嘅 1P (叮叮菓菜 / DINGDONG FRESH)；3P 街市檔冇 PO。
-     =================================================================== -->
-<div id="tab-cancattr" style="display:none">
-  <div class="cards">
-    <div class="kpi"><div class="lab">已歸因訂單行</div><div class="val" id="caLines">-</div></div>
-    <div class="kpi"><div class="lab">取消／退款行</div><div class="val" id="caCanc">-</div></div>
-    <div class="kpi"><div class="lab">取消率</div><div class="val" id="caRate">-</div></div>
-    <div class="kpi"><div class="lab">缺貨率</div><div class="val" id="caOos">-</div></div>
-    <div class="kpi"><div class="lab">剔除（當日多供應商）</div><div class="val" id="caDrop">-</div></div>
-  </div>
-
-  <div class="panel" style="margin-top:10px">
-    <div class="row" style="gap:10px;align-items:flex-end;flex-wrap:wrap">
-      <label>收貨日由 <input type="date" id="caFrom"></label>
-      <label>至 <input type="date" id="caTo"></label>
-      <label>最少訂單行
-        <input type="number" id="caMin" value="200" min="0" step="50" style="width:88px">
-      </label>
-      <button class="btn" id="caApply">套用</button>
-      <button class="btn" id="caReload">重新讀取 Supplier Map</button>
-      <button class="btn" id="caExp">匯出 CSV</button>
-      <span id="caStatus" class="muted"></span>
-    </div>
-    <div id="caWarn" class="muted" style="margin-top:8px"></div>
-  </div>
-
-  <div class="panel" style="margin-top:10px">
-    <div class="h">供應商取消率（按 IMAX 出貨 batch 歸因）</div>
-    <table class="thin" id="caTable">
-      <thead><tr>
-        <th data-sort="supplier" style="text-align:left">供應商</th>
-        <th data-sort="lines">訂單行</th>
-        <th data-sort="qty">出售量</th>
-        <th data-sort="canc">取消行</th>
-        <th data-sort="rate">取消率</th>
-        <th data-sort="oos">缺貨</th>
-        <th data-sort="oosRate">缺貨率</th>
-        <th data-sort="quality">質素差</th>
-        <th data-sort="missing">缺漏</th>
-        <th data-sort="wrong">送錯貨</th>
-        <th data-sort="broken">外觀損壞</th>
-        <th data-sort="other">其他</th>
-      </tr></thead>
-      <tbody id="caBody"><tr><td colspan="12" class="muted">未載入</td></tr></tbody>
-    </table>
-    <div class="muted" style="margin-top:6px">點供應商名可展開逐張單明細。</div>
-  </div>
-
-  <div class="panel" style="margin-top:10px">
-    <div class="h">單日事件排行（同一供應商 × SKU × 收貨日）</div>
-    <table class="thin"><thead><tr>
-      <th>收貨日</th><th style="text-align:left">SKU</th><th style="text-align:left">供應商</th>
-      <th>類型</th><th>單數</th><th>Batch</th><th>PO</th>
-    </tr></thead><tbody id="caEvBody"><tr><td colspan="7" class="muted">未載入</td></tr></tbody></table>
-  </div>
-
-  <div class="panel" style="margin-top:10px" id="caDetailWrap">
-    <div class="h" id="caDetailHead">明細</div>
-    <table class="thin"><thead><tr>
-      <th>收貨日</th><th style="text-align:left">Order</th><th style="text-align:left">SKU</th>
-      <th>類型</th><th style="text-align:left">Reason</th><th>量</th><th>已出</th><th>退款</th>
-      <th>Batch</th><th>PO</th><th>收貨時間</th>
-    </tr></thead><tbody id="caDetBody"><tr><td colspan="11" class="muted">點上面嘅供應商名</td></tr></tbody></table>
-  </div>
-</div>
 
 <script>
 /* ===== 取消歸因 — 邏輯 ===== */
