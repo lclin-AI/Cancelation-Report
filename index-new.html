@@ -124,6 +124,7 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
       <div class="tab" data-tab="yday">主要分析（昨日）</div>
       <div class="tab" data-tab="detail">Order 明細</div>
       <div class="tab" data-tab="invisible">Invisible List</div>
+      <div class="tab" data-tab="cancattr">取消歸因</div>
     </div>
 
     <div id="tab-main">
@@ -386,6 +387,10 @@ function ingest(recs){
       cancel_type:String(g("cancel_type")).trim(),
       cs_reason:String(rec["sku_cs_refund_reason"]==null?"":rec["sku_cs_refund_reason"]).trim(),
       rr_reason:String(rec["REFUND_REPORT_CANCEL_reason"]==null?"":rec["REFUND_REPORT_CANCEL_reason"]).trim(),
+      /* 2026-08-27: 留住訂單狀態，令「取消歸因」頁可以剔除 Fully Cancelled 整單 */
+      /* 同時留住 dispatched_quantity —— 出貨後退款 (缺漏/質素) 唔可以用 quantity-refund 推算 */
+      dispatched:toNum(rec["dispatched_quantity"]),
+      status:String(rec["combined_order_status"]==null?"":rec["combined_order_status"]).trim(),
       sold:toNum(g("sold_qty")), refund:toNum(g("refund_qty")),
       date:String(g("delivery_date"))
     });
@@ -2678,6 +2683,380 @@ if(_isXlsx){
   if(document.readyState==="loading"){ document.addEventListener("DOMContentLoaded", boot); } else { boot(); }
   setTimeout(boot, 1200);
   setTimeout(function(){ buildStoreNames(); }, 3000);
+})();
+</script>
+
+
+<!-- ===================================================================
+     取消歸因 (Cancellation -> Supplier)  — 2026-08-27
+     資料源 A：主報表已載入嘅取消 export (ROWS)。有真 delivery_date。
+     資料源 B：Google Sheet「QC App」→ tab「Supplier Map」，由 IMAX
+               每日寫入 (imax_supplier_map.py)：
+               material | date | supplier | vendorCode | po | batch |
+               batch_recv | issued_qty | n_batch | n_supplier
+     嚴格模式：n_supplier > 1 嘅 (SKU × 收貨日) 整格剔除，分子分母一致剔。
+     只覆蓋經 TY8F 倉嘅 1P (叮叮菓菜 / DINGDONG FRESH)；3P 街市檔冇 PO。
+     =================================================================== -->
+<div id="tab-cancattr" style="display:none">
+  <div class="cards">
+    <div class="kpi"><div class="lab">已歸因訂單行</div><div class="val" id="caLines">-</div></div>
+    <div class="kpi"><div class="lab">取消／退款行</div><div class="val" id="caCanc">-</div></div>
+    <div class="kpi"><div class="lab">取消率</div><div class="val" id="caRate">-</div></div>
+    <div class="kpi"><div class="lab">缺貨率</div><div class="val" id="caOos">-</div></div>
+    <div class="kpi"><div class="lab">剔除（當日多供應商）</div><div class="val" id="caDrop">-</div></div>
+  </div>
+
+  <div class="panel" style="margin-top:10px">
+    <div class="row" style="gap:10px;align-items:flex-end;flex-wrap:wrap">
+      <label>收貨日由 <input type="date" id="caFrom"></label>
+      <label>至 <input type="date" id="caTo"></label>
+      <label>最少訂單行
+        <input type="number" id="caMin" value="200" min="0" step="50" style="width:88px">
+      </label>
+      <button class="btn" id="caApply">套用</button>
+      <button class="btn" id="caReload">重新讀取 Supplier Map</button>
+      <button class="btn" id="caExp">匯出 CSV</button>
+      <span id="caStatus" class="muted"></span>
+    </div>
+    <div id="caWarn" class="muted" style="margin-top:8px"></div>
+  </div>
+
+  <div class="panel" style="margin-top:10px">
+    <div class="h">供應商取消率（按 IMAX 出貨 batch 歸因）</div>
+    <table class="thin" id="caTable">
+      <thead><tr>
+        <th data-sort="supplier" style="text-align:left">供應商</th>
+        <th data-sort="lines">訂單行</th>
+        <th data-sort="qty">出售量</th>
+        <th data-sort="canc">取消行</th>
+        <th data-sort="rate">取消率</th>
+        <th data-sort="oos">缺貨</th>
+        <th data-sort="oosRate">缺貨率</th>
+        <th data-sort="quality">質素差</th>
+        <th data-sort="missing">缺漏</th>
+        <th data-sort="wrong">送錯貨</th>
+        <th data-sort="broken">外觀損壞</th>
+        <th data-sort="other">其他</th>
+      </tr></thead>
+      <tbody id="caBody"><tr><td colspan="12" class="muted">未載入</td></tr></tbody>
+    </table>
+    <div class="muted" style="margin-top:6px">點供應商名可展開逐張單明細。</div>
+  </div>
+
+  <div class="panel" style="margin-top:10px">
+    <div class="h">單日事件排行（同一供應商 × SKU × 收貨日）</div>
+    <table class="thin"><thead><tr>
+      <th>收貨日</th><th style="text-align:left">SKU</th><th style="text-align:left">供應商</th>
+      <th>類型</th><th>單數</th><th>Batch</th><th>PO</th>
+    </tr></thead><tbody id="caEvBody"><tr><td colspan="7" class="muted">未載入</td></tr></tbody></table>
+  </div>
+
+  <div class="panel" style="margin-top:10px" id="caDetailWrap">
+    <div class="h" id="caDetailHead">明細</div>
+    <table class="thin"><thead><tr>
+      <th>收貨日</th><th style="text-align:left">Order</th><th style="text-align:left">SKU</th>
+      <th>類型</th><th style="text-align:left">Reason</th><th>量</th><th>已出</th><th>退款</th>
+      <th>Batch</th><th>PO</th><th>收貨時間</th>
+    </tr></thead><tbody id="caDetBody"><tr><td colspan="11" class="muted">點上面嘅供應商名</td></tr></tbody></table>
+  </div>
+</div>
+
+<script>
+/* ===== 取消歸因 — 邏輯 ===== */
+(function(){
+  "use strict";
+  var SHEET_ID = "1ZnCanOWGL5rlHRqPZq5wHKUhM_lrARkQ-Ox4FrV0U4Y";   /* QC App */
+  var MAP_TAB  = "Supplier Map";
+  var API_KEY  = "AIzaSyD1jQcj2R5Rid5Pde1tFEFkfnHjI251YpM";
+  var PANEL_ID = "tab-cancattr", TAB_NAME = "cancattr";
+
+  var MAP = null;            /* suffix|YYYY-MM-DD -> {sup,vc,po,batch,recv,n} */
+  var MAP_DAYS = [];         /* Supplier Map 覆蓋嘅日期 */
+  var AGG = [], DETAIL = {}, EVENTS = [];
+  var LOADING = false;
+  var sortKey = "rate", sortDir = -1;
+
+  function q(id){ return document.getElementById(id); }
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];}); }
+  function nd(v){ try{ return window.__normDate ? window.__normDate(v) : String(v||"").slice(0,10); }catch(e){ return String(v||"").slice(0,10); } }
+  function say(m){ var e=q("caStatus"); if(e) e.textContent = m||""; }
+  function warn(m){ var e=q("caWarn"); if(e) e.innerHTML = m||""; }
+  function pc(n,d){ return d ? (n/d*100).toFixed(2)+"%" : "-"; }
+
+  function allRows(){
+    try{ if(typeof ROWS!=="undefined" && ROWS && ROWS.length) return ROWS; }catch(e){}
+    return (window.ROWS||[]);
+  }
+  /* 取消資料實際覆蓋嘅收貨日範圍（滾動快照，每日會前移） */
+  function rowDateRange(){
+    var rows = allRows(), min = "", max = "";
+    for(var i=0;i<rows.length;i++){
+      var d = nd(rows[i].date); if(!d) continue;
+      if(!min || d < min) min = d;
+      if(d > max) max = d;
+    }
+    return {min:min, max:max};
+  }
+  function suffixOf(sku){
+    var m = String(sku||"").match(/^(?:76471_S_|B0812001_S_)(\d+)$/);
+    return m ? ("00000"+m[1]).slice(-5) : "";
+  }
+  function isNullR(v){ var s=String(v==null?"":v).trim().toLowerCase(); return s===""||s==="null"; }
+  function excluded(r){
+    try{
+      if(window.__EXCL_REASON && window.__EXCL_REASON(r.cancel_type, r.cs_reason, r.rr_reason)) return true;
+    }catch(e){}
+    var st = String(r.status||"").replace(/[_\-]+/g," ").replace(/\s+/g," ").trim().toLowerCase();
+    if(st==="fully cancelled" || st==="fully canceled") return true;
+    return false;
+  }
+  /* 問題分類 — 供應商責任分開睇：缺貨 = 交唔夠貨；其餘 = 出貨後質量 */
+  function category(r){
+    var a=String(r.cancel_type||""), b=String(r.cs_reason||""), c=String(r.rr_reason||"");
+    if(a.indexOf("EIGHT_HOUR_OOS")>=0) return "oos";
+    if(c.indexOf("QUALITY")>=0 || b.indexOf("3F13")>=0) return "quality";
+    if(c.indexOf("MISSING_ITEM")>=0 || b.indexOf("3F3b")>=0) return "missing";
+    if(c.indexOf("WRONG_ITEM")>=0 || b.indexOf("3F2b")>=0) return "wrong";
+    if(b.indexOf("3F27")>=0) return "broken";
+    return "other";
+  }
+  var CAT_LABEL = {oos:"缺貨", quality:"質素差", missing:"缺漏", wrong:"送錯貨", broken:"外觀損壞", other:"其他"};
+
+  /* ---------- 讀 Supplier Map ---------- */
+  async function loadMap(force){
+    if(MAP && !force) return MAP;
+    if(LOADING) return null;
+    LOADING = true; say("讀取 Supplier Map …");
+    try{
+      var base = "https://sheets.googleapis.com/v4/spreadsheets/" + SHEET_ID;
+      var mj = await (await fetch(base + "?fields=" + encodeURIComponent("sheets.properties(title,gridProperties)") + "&key=" + API_KEY)).json();
+      if(mj.error) throw new Error("讀 Sheet 失敗：" + mj.error.message);
+      var pr = null;
+      (mj.sheets||[]).forEach(function(sh){ if(sh.properties && sh.properties.title===MAP_TAB) pr = sh.properties; });
+      if(!pr) throw new Error('Sheet 內找不到「' + MAP_TAB + '」分頁 — IMAX job 未跑過?');
+      var rc = (pr.gridProperties||{}).rowCount || 1000;
+      var vj = await (await fetch(base + "/values/" + encodeURIComponent(MAP_TAB + "!A1:J" + rc) + "?key=" + API_KEY)).json();
+      if(vj.error) throw new Error("讀 Supplier Map 失敗：" + vj.error.message);
+      var vals = vj.values || [];
+      if(vals.length < 2) throw new Error("Supplier Map 冇資料");
+      var hdr = vals[0].map(function(x){ return String(x||"").trim(); });
+      var ix = {}; hdr.forEach(function(h,i){ ix[h]=i; });
+      var need = ["material","date","supplier","n_supplier"];
+      for(var i=0;i<need.length;i++) if(!(need[i] in ix)) throw new Error("Supplier Map 缺欄位：" + need[i]);
+      var m = {}, days = {};
+      for(var r=1;r<vals.length;r++){
+        var row = vals[r]; if(!row || !row[ix.material]) continue;
+        var mat = String(row[ix.material]).trim();
+        var suf = (mat.split("-")[1] || "").trim(); if(!suf) continue;
+        var d = nd(row[ix.date]); if(!d) continue;
+        days[d] = 1;
+        m[suf + "|" + d] = {
+          sup: String(row[ix.supplier]||"").trim(),
+          vc:  String(row[ix.vendorCode]||"").trim(),
+          po:  String(row[ix.po]||"").trim(),
+          batch: String(row[ix.batch]||"").trim(),
+          recv: String(row[ix.batch_recv]||"").trim(),
+          n:   parseInt(row[ix.n_supplier]||"1", 10) || 1
+        };
+      }
+      MAP = m; MAP_DAYS = Object.keys(days).sort();
+      say("Supplier Map 已載入：" + Object.keys(m).length + " 個 (SKU × 收貨日)，" + MAP_DAYS.length + " 日");
+      return MAP;
+    }catch(e){
+      MAP = null; say("");
+      warn('<span style="color:#e88">✗ ' + esc(e.message) + '</span>　—— 供應商歸因需要 IMAX 每日寫入 Sheet「QC App」→「' + MAP_TAB + '」。');
+      return null;
+    }finally{ LOADING = false; }
+  }
+
+  /* ---------- 計算 ---------- */
+  function compute(){
+    var rows = allRows();
+    if(!rows.length){ warn('<span style="color:#e88">主報表未載入取消資料 —— 請先在「主要分析」載入 Drive 檔。</span>'); return false; }
+    if(!MAP){ return false; }
+
+    var from = q("caFrom").value || "", to = q("caTo").value || "";
+    var acc = {}, drop = 0, unknown = 0, noMap = 0, det = {}, ev = {};
+
+    for(var i=0;i<rows.length;i++){
+      var r = rows[i];
+      var suf = suffixOf(r.sku_id); if(!suf) continue;            /* 3P / 非倉存 */
+      var d = nd(r.date); if(!d) continue;
+      if(from && d < from) continue;
+      if(to && d > to) continue;
+      var hit = MAP[suf + "|" + d];
+      if(!hit){ noMap++; continue; }                              /* Supplier Map 冇呢格 */
+      if(hit.n > 1){ drop++; continue; }                          /* 嚴格：真多供應商，剔整格 */
+      if(!hit.sup){ unknown++; continue; }                        /* batch 查唔到出處 */
+      if(excluded(r)) continue;
+
+      var a = acc[hit.sup] || (acc[hit.sup] = {supplier:hit.sup, lines:0, qty:0, canc:0,
+        oos:0, quality:0, missing:0, wrong:0, broken:0, other:0});
+      a.lines++; a.qty += (r.sold||0);
+
+      var hasReason = !isNullR(r.cancel_type) || !isNullR(r.cs_reason) || !isNullR(r.rr_reason);
+      if(!hasReason) continue;
+      var cat = category(r);
+      a.canc++; a[cat]++;
+
+      (det[hit.sup] || (det[hit.sup] = [])).push({
+        date:d, order:r.order, sku:(r.sku_id + " " + (r.sku_name||"")).slice(0,52),
+        cat:CAT_LABEL[cat], reason:[r.cancel_type, r.cs_reason, r.rr_reason].filter(function(x){return !isNullR(x);}).join(" / ").slice(0,64),
+        qty:r.sold, disp:(r.dispatched==null?"":r.dispatched), refund:r.refund,
+        batch:hit.batch, po:hit.po, recv:hit.recv, supplier:hit.sup, vc:hit.vc
+      });
+      var ek = hit.sup + "" + d + "" + (r.sku_name||r.sku_id) + "" + cat;
+      var e = ev[ek] || (ev[ek] = {date:d, sku:(r.sku_name||r.sku_id), sup:hit.sup,
+        cat:CAT_LABEL[cat], n:0, batch:hit.batch, po:hit.po});
+      e.n++;
+    }
+
+    Object.keys(acc).forEach(function(k){
+      var a = acc[k];
+      a.rate = a.lines ? a.canc/a.lines*100 : 0;
+      a.oosRate = a.lines ? a.oos/a.lines*100 : 0;
+    });
+    AGG = Object.keys(acc).map(function(k){ return acc[k]; });
+    DETAIL = det;
+    EVENTS = Object.keys(ev).map(function(k){ return ev[k]; }).sort(function(x,y){ return y.n - x.n; });
+
+    var tl=0, tc=0, to2=0;
+    AGG.forEach(function(a){ tl+=a.lines; tc+=a.canc; to2+=a.oos; });
+    q("caLines").textContent = tl.toLocaleString();
+    q("caCanc").textContent  = tc.toLocaleString();
+    q("caRate").textContent  = pc(tc, tl);
+    q("caOos").textContent   = pc(to2, tl);
+    q("caDrop").textContent  = drop.toLocaleString();
+
+    var w = [];
+    w.push("Supplier Map 覆蓋 " + (MAP_DAYS[0]||"?") + " ~ " + (MAP_DAYS[MAP_DAYS.length-1]||"?") + "。");
+    w.push("嚴格模式：當日出貨涉多過一個供應商即整格剔除（今次剔 " + drop.toLocaleString() + " 行，分子分母一致剔）。");
+    if(unknown) w.push("另有 " + unknown.toLocaleString() + " 行嘅 batch 查唔到收貨來源（IMAX 收貨紀錄超出抓取範圍），一併剔除。");
+    if(noMap) w.push("另有 " + noMap.toLocaleString() + " 行落在 Supplier Map 範圍外（日期未覆蓋或該 SKU 當日無出貨紀錄）。");
+    w.push("只覆蓋經 TY8F 倉嘅 1P（叮叮菓菜／DINGDONG FRESH）；3P 街市檔即日採購冇 PO，無法歸因。");
+    warn(w.join("<br>"));
+    return true;
+  }
+
+  /* ---------- 畫表 ---------- */
+  function render(){
+    var minL = parseInt(q("caMin").value || "0", 10) || 0;
+    var list = AGG.filter(function(a){ return a.lines >= minL; });
+    list.sort(function(x,y){
+      var a=x[sortKey], b=y[sortKey];
+      if(typeof a==="string") return sortDir * String(a).localeCompare(String(b));
+      return sortDir * ((a||0)-(b||0));
+    });
+    var b = q("caBody");
+    if(!list.length){ b.innerHTML = '<tr><td colspan="12" class="muted">冇符合條件嘅供應商（試調低「最少訂單行」）</td></tr>'; }
+    else{
+      b.innerHTML = list.map(function(a){
+        var hot = a.rate >= 5 ? ' style="color:#f88;font-weight:600"' : (a.rate >= 1 ? ' style="color:#fc8"' : '');
+        return '<tr>' +
+          '<td style="text-align:left"><a href="#" class="caSup" data-sup="' + esc(a.supplier) + '">' + esc(a.supplier) + '</a></td>' +
+          '<td>' + a.lines.toLocaleString() + '</td>' +
+          '<td>' + Math.round(a.qty).toLocaleString() + '</td>' +
+          '<td>' + a.canc + '</td>' +
+          '<td' + hot + '>' + a.rate.toFixed(2) + '%</td>' +
+          '<td>' + a.oos + '</td><td>' + a.oosRate.toFixed(2) + '%</td>' +
+          '<td>' + a.quality + '</td><td>' + a.missing + '</td>' +
+          '<td>' + a.wrong + '</td><td>' + a.broken + '</td><td>' + a.other + '</td></tr>';
+      }).join("");
+    }
+    var eb = q("caEvBody");
+    var ev = EVENTS.filter(function(e){ return e.n >= 3; }).slice(0, 25);
+    eb.innerHTML = ev.length ? ev.map(function(e){
+      return '<tr><td>' + esc(e.date) + '</td><td style="text-align:left">' + esc(String(e.sku).slice(0,30)) + '</td>' +
+        '<td style="text-align:left">' + esc(e.sup.split(" ")[0]) + '</td><td>' + esc(e.cat) + '</td>' +
+        '<td style="font-weight:600">' + e.n + '</td><td>' + esc(e.batch) + '</td><td>' + esc(e.po) + '</td></tr>';
+    }).join("") : '<tr><td colspan="7" class="muted">冇 3 單或以上嘅單日事件</td></tr>';
+  }
+
+  function showDetail(sup){
+    var d = (DETAIL[sup] || []).slice().sort(function(a,b){ return a.date < b.date ? 1 : -1; });
+    q("caDetailHead").textContent = "明細 — " + sup + "（" + d.length + " 行）";
+    q("caDetBody").innerHTML = d.length ? d.map(function(x){
+      return '<tr><td>' + esc(x.date) + '</td><td style="text-align:left">' + esc(x.order) + '</td>' +
+        '<td style="text-align:left">' + esc(x.sku) + '</td><td>' + esc(x.cat) + '</td>' +
+        '<td style="text-align:left">' + esc(x.reason) + '</td><td>' + x.qty + '</td><td>' + x.disp + '</td>' +
+        '<td>' + x.refund + '</td><td>' + esc(x.batch) + '</td><td>' + esc(x.po) + '</td><td>' + esc(x.recv) + '</td></tr>';
+    }).join("") : '<tr><td colspan="11" class="muted">冇明細</td></tr>';
+    try{ q("caDetailWrap").scrollIntoView({behavior:"smooth", block:"start"}); }catch(e){}
+  }
+
+  function exportCsv(){
+    var out = [["delivery_date","order_number","sku","category","reason","qty","dispatched","refund_qty","batch","supplier","vendorCode","po","batch_recv"]];
+    Object.keys(DETAIL).forEach(function(s){
+      DETAIL[s].forEach(function(x){
+        out.push([x.date, x.order, x.sku, x.cat, x.reason, x.qty, x.disp, x.refund, x.batch, x.supplier, x.vc, x.po, x.recv]);
+      });
+    });
+    if(out.length < 2){ alert("冇資料可匯出。"); return; }
+    var csv = "﻿" + out.map(function(r){
+      return r.map(function(c){ var v=String(c==null?"":c); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }).join(",");
+    }).join("\r\n");
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], {type:"text/csv;charset=utf-8"}));
+    a.download = "cancellation_supplier_" + (MAP_DAYS[MAP_DAYS.length-1]||"") + ".csv";
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  async function refresh(force){
+    var m = await loadMap(force);
+    if(!m) { render(); return; }
+    if(!q("caFrom").value && MAP_DAYS.length){
+      /* 預設 = Supplier Map 同取消資料嘅交集，並且唔計今日（今日仲未收完貨） */
+      var rd = rowDateRange();
+      var lo = MAP_DAYS[0], hi = MAP_DAYS[MAP_DAYS.length-1];
+      if(rd.min && rd.min > lo) lo = rd.min;
+      if(rd.max && rd.max < hi) hi = rd.max;
+      var y = new Date(Date.now() - 864e5).toISOString().slice(0,10);   /* 昨日 */
+      if(hi > y) hi = y;
+      if(lo > hi) lo = hi;
+      q("caFrom").value = lo;
+      q("caTo").value   = hi;
+    }
+    if(compute()) render(); else render();
+  }
+
+  /* ---------- 分頁切換 ---------- */
+  function switchTo(){
+    document.querySelectorAll(".tab").forEach(function(t){ t.classList.toggle("on", t.dataset.tab===TAB_NAME); });
+    ["tab-main","tab-yday","tab-detail","tab-invisible","tab-badcmt","tab-ivtask","tab-ivlog"].forEach(function(id){
+      var p=q(id); if(p) p.style.display="none";
+    });
+    var me=q(PANEL_ID); if(me) me.style.display="block";
+    refresh(false);
+  }
+
+  function wire(){
+    var t = document.querySelector('.tab[data-tab="' + TAB_NAME + '"]');
+    if(!t){ setTimeout(wire, 300); return; }
+    t.addEventListener("click", switchTo);
+    document.querySelectorAll(".tab").forEach(function(el){
+      if(el.dataset.tab !== TAB_NAME){
+        el.addEventListener("click", function(){ var p=q(PANEL_ID); if(p) p.style.display="none"; });
+      }
+    });
+    var ap=q("caApply"); if(ap) ap.addEventListener("click", function(){ if(compute()) render(); });
+    var rl=q("caReload"); if(rl) rl.addEventListener("click", function(){ refresh(true); });
+    var ex=q("caExp"); if(ex) ex.addEventListener("click", exportCsv);
+    var bd=q("caBody"); if(bd) bd.addEventListener("click", function(ev){
+      var a=ev.target; if(a && a.className==="caSup"){ ev.preventDefault(); showDetail(a.getAttribute("data-sup")); }
+    });
+    document.querySelectorAll('#caTable th[data-sort]').forEach(function(th){
+      th.style.cursor="pointer";
+      th.addEventListener("click", function(){
+        var k=th.getAttribute("data-sort");
+        if(sortKey===k) sortDir=-sortDir; else { sortKey=k; sortDir=(k==="supplier")?1:-1; }
+        render();
+      });
+    });
+    ["caMin"].forEach(function(id){ var e=q(id); if(e) e.addEventListener("keydown", function(ev){ if(ev.key==="Enter"){ if(compute()) render(); } }); });
+  }
+
+  if(document.readyState==="loading") document.addEventListener("DOMContentLoaded", wire);
+  else wire();
 })();
 </script>
 
