@@ -2801,9 +2801,23 @@ if(_isXlsx){
     }
     return {min:min, max:max};
   }
+  /* 已核對過嘅 1P 店前綴 —— 佢哋嘅 _S_ 尾碼確認等於 IMAX B0812001-<尾碼>。
+     必須用白名單，唔可以開放尾碼配對：實測有 5,567 個 3P SKU（54,642 行）
+     嘅尾碼撞到 TY 倉 material，例如 63474_S_00163 樹記紫菜響鈴 會被當成
+     B0812001-00163 皇帝菜苗。加新前綴之前，先逐個 SKU 對名。
+     其餘 1P 店（3小時超市／八叔凍肉／嘉頓麵包／紅豆烘焙／3小時雪糕／文記牛肉／
+     李輝記牛肉）嘅貨走 TM-V / TAC-CRAB / TAC-FROZEN，唔經 TY 倉，所以未covered。 */
+  var P1_PREFIX = {
+    "76471":   "叮叮菓菜",
+    "B0812001":"大街市 鮮貨部",
+    "80971":   "SoFresh Select",
+    "81352":   "肉肉鮮生",
+    "82603":   "有機農莊"
+  };
+  var P1_RE = new RegExp("^(" + Object.keys(P1_PREFIX).join("|") + ")_S_(\\d+)$");
   function suffixOf(sku){
-    var m = String(sku||"").match(/^(?:76471_S_|B0812001_S_)(\d+)$/);
-    return m ? ("00000"+m[1]).slice(-5) : "";
+    var m = String(sku||"").match(P1_RE);
+    return m ? ("00000"+m[2]).slice(-5) : "";
   }
   function isNullR(v){ var s=String(v==null?"":v).trim().toLowerCase(); return s===""||s==="null"; }
   function excluded(r){
@@ -2939,8 +2953,10 @@ if(_isXlsx){
     w.push("嚴格模式：當日出貨涉多過一個供應商即整格剔除（今次剔 " + drop.toLocaleString() + " 行，分子分母一致剔）。");
     if(unknown) w.push("另有 " + unknown.toLocaleString() + " 行嘅 batch 查唔到收貨來源（IMAX 收貨紀錄超出抓取範圍），一併剔除。");
     if(noMap) w.push("另有 " + noMap.toLocaleString() + " 行落在 Supplier Map 範圍外（日期未覆蓋或該 SKU 當日無出貨紀錄）。");
-    w.push("只覆蓋 76471_S_ / B0812001_S_（叮叮菓菜／大街市鮮貨部）經 TY8F + TY-INTERLINK 倉嘅貨；" +
-           "其他 1P 店（肉肉鮮生等）同 3P 街市檔未歸因。");
+    w.push("覆蓋範圍：" + Object.keys(P1_PREFIX).map(function(k){ return P1_PREFIX[k]; }).join("、") +
+           " 經 TY8F + TY-INTERLINK 倉嘅貨。其餘 1P 店（3小時超市／八叔凍肉／嘉頓麵包／紅豆烘焙／" +
+           "3小時雪糕／文記牛肉／李輝記牛肉）走 TM-V / TAC-CRAB / TAC-FROZEN，唔經 TY 倉；" +
+           "3P 街市檔即日採購冇 PO。兩者都歸因唔到。");
     w.push("⚠ 同「主要分析（昨日）」對唔上係正常：該頁計『退款件數』且所有取消原因全計；" +
            "本頁計『訂單行』並沿用 report 嘅排除規則（Fully Cancelled、2E9 追單超時、DAMAGE、no-show）。" +
            "上面「退款件數」一欄可作件數口徑對照。");
