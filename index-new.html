@@ -181,15 +181,14 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
         <th data-sort="qty">賣出件</th>
         <th data-sort="rqty">退款件</th>
         <th data-sort="qrate">退款率</th>
-        <th data-sort="oos">缺貨</th>
-        <th data-sort="oosRate">缺貨率</th>
+        <th data-sort="oosRate">缺貨</th>
         <th data-sort="quality">質素差</th>
         <th data-sort="missing">缺漏</th>
         <th data-sort="wrong">送錯貨</th>
         <th data-sort="broken">外觀損壞</th>
         <th data-sort="other">其他</th>
             </tr></thead>
-            <tbody id="caBody"><tr><td colspan="14" class="muted">未載入</td></tr></tbody>
+            <tbody id="caBody"><tr><td colspan="13" class="muted">未載入</td></tr></tbody>
           </table>
         </div>
         <div class="muted" style="margin-top:8px">點供應商名可展開逐張單明細。</div>
@@ -3081,8 +3080,11 @@ if(_isXlsx){
       var c = a[rsn] || 0, rq = a.rq[rsn] || 0;
       return {supplier:a.supplier, lines:a.lines, qty:a.qty, canc:c, rqty:rq,
               rate: a.lines ? c/a.lines*100 : 0, qrate: a.qty ? rq/a.qty*100 : 0,
-              oos:a.oos, oosRate:a.oosRate, quality:a.quality, missing:a.missing,
-              wrong:a.wrong, broken:a.broken, other:a.other};
+              /* 揀咗原因之後，原因欄只顯示該原因，其餘留空，避免同 KPI 打對台 */
+              oos: rsn==="oos"?a.oos:0, oosRate:a.oosRate,
+              quality: rsn==="quality"?a.quality:0, missing: rsn==="missing"?a.missing:0,
+              wrong: rsn==="wrong"?a.wrong:0, broken: rsn==="broken"?a.broken:0,
+              other: rsn==="other"?a.other:0};
     }).filter(function(a){ return !rsn || a.canc > 0; });
     list.sort(function(x,y){
       var a=x[sortKey], b=y[sortKey];
@@ -3090,7 +3092,7 @@ if(_isXlsx){
       return sortDir * ((a||0)-(b||0));
     });
     var b = q("caBody");
-    if(!list.length){ b.innerHTML = '<tr><td colspan="14" class="muted">冇符合條件嘅供應商（試調低「最少訂單行」）</td></tr>'; }
+    if(!list.length){ b.innerHTML = '<tr><td colspan="13" class="muted">冇符合條件嘅供應商（試調低「最少訂單行」）</td></tr>'; }
     else{
       b.innerHTML = list.map(function(a){
         var hot = a.rate >= 5 ? ' style="color:#f88;font-weight:600"' : (a.rate >= 1 ? ' style="color:#fc8"' : '');
@@ -3102,9 +3104,13 @@ if(_isXlsx){
           '<td>' + Math.round(a.qty).toLocaleString() + '</td>' +
           '<td>' + Math.round(a.rqty).toLocaleString() + '</td>' +
           '<td>' + a.qrate.toFixed(2) + '%</td>' +
-          '<td>' + a.oos + '</td><td>' + a.oosRate.toFixed(2) + '%</td>' +
-          '<td>' + a.quality + '</td><td>' + a.missing + '</td>' +
-          '<td>' + a.wrong + '</td><td>' + a.broken + '</td><td>' + a.other + '</td></tr>';
+          ["oos","quality","missing","wrong","broken","other"].map(function(c){
+            var n = a[c] || 0;
+            if(!n) return '<td class="muted">-</td>';
+            var rt = a.lines ? n/a.lines*100 : 0;
+            var st = rt >= 5 ? ' style="color:#f88;font-weight:600"' : (rt >= 1 ? ' style="color:#fc8"' : '');
+            return '<td' + st + '>' + n + '<span class="muted"> (' + rt.toFixed(2) + '%)</span></td>';
+          }).join("") + '</tr>';
       }).join("");
     }
     /* ---- 供應商 × 原因 取消率 ---- */
