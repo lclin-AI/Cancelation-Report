@@ -196,6 +196,27 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
       </div>
 
       <div class="card">
+        <h2>供應商 × 原因 取消率</h2>
+        <div class="scroll">
+          <table class="thin" id="caMtxTable">
+            <thead><tr>
+              <th data-mtx="supplier" style="text-align:left">供應商</th>
+              <th data-mtx="lines">訂單行</th>
+              <th data-mtx="oos">缺貨</th>
+              <th data-mtx="quality">質素差</th>
+              <th data-mtx="missing">缺漏</th>
+              <th data-mtx="wrong">送錯貨</th>
+              <th data-mtx="broken">外觀損壞</th>
+              <th data-mtx="other">其他</th>
+              <th data-mtx="canc">合計</th>
+            </tr></thead>
+            <tbody id="caMtxBody"><tr><td colspan="9" class="muted">未載入</td></tr></tbody>
+          </table>
+        </div>
+        <div class="muted" style="margin-top:8px">每格 = 該原因嘅取消行數（佔該供應商訂單行嘅比率）。分母係同一個，所以橫向、縱向都可比。點欄名可排序。</div>
+      </div>
+
+      <div class="card">
         <h2>按原因歸納</h2>
         <div class="scroll">
           <table class="thin"><thead><tr>
@@ -2802,6 +2823,7 @@ if(_isXlsx){
   var AGG = [], DETAIL = {}, EVENTS = [];
   var LOADING = false;
   var sortKey = "rate", sortDir = -1;
+  var mtxKey = "canc", mtxDir = -1;      /* 供應商 × 原因 表嘅排序 */
 
   function q(id){ return document.getElementById(id); }
   function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];}); }
@@ -3085,6 +3107,29 @@ if(_isXlsx){
           '<td>' + a.wrong + '</td><td>' + a.broken + '</td><td>' + a.other + '</td></tr>';
       }).join("");
     }
+    /* ---- 供應商 × 原因 取消率 ---- */
+    var MCATS = ["oos","quality","missing","wrong","broken","other"];
+    var mlist = AGG.filter(function(a){ return a.lines >= minL; });
+    mlist.sort(function(x,y){
+      var a = mtxKey === "supplier" ? x.supplier : (mtxKey === "lines" ? x.lines : (x[mtxKey]||0)/(x.lines||1));
+      var b = mtxKey === "supplier" ? y.supplier : (mtxKey === "lines" ? y.lines : (y[mtxKey]||0)/(y.lines||1));
+      if(typeof a === "string") return mtxDir * String(a).localeCompare(String(b));
+      return mtxDir * (a - b);
+    });
+    var mb = q("caMtxBody");
+    mb.innerHTML = mlist.length ? mlist.map(function(a){
+      return '<tr><td style="text-align:left"><a href="#" class="caSup" data-sup="' + esc(a.supplier) + '">' +
+        esc(a.supplier) + '</a></td><td>' + a.lines.toLocaleString() + '</td>' +
+        MCATS.map(function(c){
+          var n = a[c] || 0;
+          if(!n) return '<td class="muted">-</td>';
+          var rt = a.lines ? n/a.lines*100 : 0;
+          var st = rt >= 5 ? ' style="color:#f88;font-weight:600"' : (rt >= 1 ? ' style="color:#fc8"' : '');
+          return '<td' + st + '>' + n + '<span class="muted"> (' + rt.toFixed(2) + '%)</span></td>';
+        }).join("") +
+        '<td>' + a.canc + '<span class="muted"> (' + (a.lines ? (a.canc/a.lines*100).toFixed(2) : "0.00") + '%)</span></td></tr>';
+    }).join("") : '<tr><td colspan="9" class="muted">冇符合條件嘅供應商</td></tr>';
+
     /* ---- 按原因歸納 ---- */
     var CATS = ["oos","quality","missing","wrong","broken","other"];
     var totQty = 0, totCanc = 0;
@@ -3196,6 +3241,17 @@ if(_isXlsx){
     var rl=q("caReload"); if(rl) rl.addEventListener("click", function(){ refresh(true); });
     var ex=q("caExp"); if(ex) ex.addEventListener("click", exportCsv);
     var bd=q("caBody"); if(bd) bd.addEventListener("click", function(ev){
+      var a=ev.target; if(a && a.className==="caSup"){ ev.preventDefault(); showDetail(a.getAttribute("data-sup")); }
+    });
+    document.querySelectorAll('#caMtxTable th[data-mtx]').forEach(function(th){
+      th.style.cursor="pointer";
+      th.addEventListener("click", function(){
+        var k=th.getAttribute("data-mtx");
+        if(mtxKey===k) mtxDir=-mtxDir; else { mtxKey=k; mtxDir=(k==="supplier")?1:-1; }
+        render();
+      });
+    });
+    var mtb=q("caMtxBody"); if(mtb) mtb.addEventListener("click", function(ev){
       var a=ev.target; if(a && a.className==="caSup"){ ev.preventDefault(); showDetail(a.getAttribute("data-sup")); }
     });
     document.querySelectorAll('#caTable th[data-sort]').forEach(function(th){
