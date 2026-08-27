@@ -2836,7 +2836,7 @@ if(_isXlsx){
       (mj.sheets||[]).forEach(function(sh){ if(sh.properties && sh.properties.title===MAP_TAB) pr = sh.properties; });
       if(!pr) throw new Error('Sheet 內找不到「' + MAP_TAB + '」分頁 — IMAX job 未跑過?');
       var rc = (pr.gridProperties||{}).rowCount || 1000;
-      var vj = await (await fetch(base + "/values/" + encodeURIComponent(MAP_TAB + "!A1:J" + rc) + "?key=" + API_KEY)).json();
+      var vj = await (await fetch(base + "/values/" + encodeURIComponent(MAP_TAB + "!A1:K" + rc) + "?key=" + API_KEY)).json();
       if(vj.error) throw new Error("讀 Supplier Map 失敗：" + vj.error.message);
       var vals = vj.values || [];
       if(vals.length < 2) throw new Error("Supplier Map 冇資料");
