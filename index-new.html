@@ -151,6 +151,16 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
           收貨日 <input type="date" id="caFrom" style="width:150px;display:inline-block">
           至 <input type="date" id="caTo" style="width:150px;display:inline-block">
           　最少訂單行 <input type="text" id="caMin" value="200" style="width:70px;display:inline-block">
+          　原因
+          <select id="caReason" style="width:130px;display:inline-block">
+            <option value="">全部原因</option>
+            <option value="oos">缺貨</option>
+            <option value="quality">質素差</option>
+            <option value="missing">缺漏</option>
+            <option value="wrong">送錯貨</option>
+            <option value="broken">外觀損壞</option>
+            <option value="other">其他</option>
+          </select>
           <button class="btn sec" id="caApply">套用</button>
           <button class="btn ghost" id="caReload">重新讀取 Supplier Map</button>
           <button class="btn ghost" id="caExp">匯出 CSV</button>
@@ -183,6 +193,17 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
           </table>
         </div>
         <div class="muted" style="margin-top:8px">點供應商名可展開逐張單明細。</div>
+      </div>
+
+      <div class="card">
+        <h2>按原因歸納</h2>
+        <div class="scroll">
+          <table class="thin"><thead><tr>
+            <th style="text-align:left">原因</th><th>取消行</th><th>佔取消總數</th>
+            <th>退款件</th><th>退款率</th><th style="text-align:left">最高率供應商（前 3）</th>
+          </tr></thead><tbody id="caRsnBody"><tr><td colspan="6" class="muted">未載入</td></tr></tbody></table>
+        </div>
+        <div class="muted" style="margin-top:8px">退款率 = 該原因嘅退款件 ÷ 全部已歸因賣出件。缺貨屬供應商交貨責任，其餘屬貨質／揀貨。</div>
       </div>
 
       <div class="card">
@@ -2911,13 +2932,14 @@ if(_isXlsx){
       if(excluded(r)) continue;
 
       var a = acc[hit.sup] || (acc[hit.sup] = {supplier:hit.sup, lines:0, qty:0, canc:0,
-        rqty:0, oos:0, quality:0, missing:0, wrong:0, broken:0, other:0});
+        rqty:0, oos:0, quality:0, missing:0, wrong:0, broken:0, other:0,
+        rq:{oos:0, quality:0, missing:0, wrong:0, broken:0, other:0}});
       a.lines++; a.qty += (r.sold||0);
 
       var hasReason = !isNullR(r.cancel_type) || !isNullR(r.cs_reason) || !isNullR(r.rr_reason);
       if(!hasReason) continue;
       var cat = category(r);
-      a.canc++; a[cat]++; a.rqty += (r.refund||0);
+      a.canc++; a[cat]++; a.rqty += (r.refund||0); a.rq[cat] += (r.refund||0);
 
       (det[hit.sup] || (det[hit.sup] = [])).push({
         date:d, order:r.order, sku:(r.sku_id + " " + (r.sku_name||"")).slice(0,52),
@@ -2971,7 +2993,16 @@ if(_isXlsx){
   /* ---------- 畫表 ---------- */
   function render(){
     var minL = parseInt(q("caMin").value || "0", 10) || 0;
-    var list = AGG.filter(function(a){ return a.lines >= minL; });
+    var rsn = (q("caReason")||{}).value || "";
+    /* 揀咗原因就只算該原因，分母（訂單行／賣出件）唔變，所以率仍然可比 */
+    var list = AGG.filter(function(a){ return a.lines >= minL; }).map(function(a){
+      if(!rsn) return a;
+      var c = a[rsn] || 0, rq = a.rq[rsn] || 0;
+      return {supplier:a.supplier, lines:a.lines, qty:a.qty, canc:c, rqty:rq,
+              rate: a.lines ? c/a.lines*100 : 0, qrate: a.qty ? rq/a.qty*100 : 0,
+              oos:a.oos, oosRate:a.oosRate, quality:a.quality, missing:a.missing,
+              wrong:a.wrong, broken:a.broken, other:a.other};
+    }).filter(function(a){ return !rsn || a.canc > 0; });
     list.sort(function(x,y){
       var a=x[sortKey], b=y[sortKey];
       if(typeof a==="string") return sortDir * String(a).localeCompare(String(b));
@@ -2995,6 +3026,30 @@ if(_isXlsx){
           '<td>' + a.wrong + '</td><td>' + a.broken + '</td><td>' + a.other + '</td></tr>';
       }).join("");
     }
+    /* ---- 按原因歸納 ---- */
+    var CATS = ["oos","quality","missing","wrong","broken","other"];
+    var totQty = 0, totCanc = 0;
+    AGG.forEach(function(a){ totQty += a.qty; totCanc += a.canc; });
+    var rb = q("caRsnBody");
+    var rrows = CATS.map(function(c){
+      var n = 0, rq = 0, tops = [];
+      AGG.forEach(function(a){
+        n += a[c] || 0; rq += a.rq[c] || 0;
+        if((a[c]||0) > 0 && a.lines >= minL) tops.push({s:a.supplier, r:a[c]/a.lines*100, n:a[c]});
+      });
+      tops.sort(function(x,y){ return y.r - x.r; });
+      return {cat:c, n:n, rq:rq, tops:tops.slice(0,3)};
+    }).filter(function(x){ return x.n > 0; }).sort(function(x,y){ return y.n - x.n; });
+    rb.innerHTML = rrows.length ? rrows.map(function(x){
+      var hi = x.cat === "oos" ? ' style="color:#fc8"' : '';
+      return '<tr><td style="text-align:left"' + hi + '>' + esc(CAT_LABEL[x.cat]) + '</td>' +
+        '<td>' + x.n + '</td><td>' + (totCanc ? (x.n/totCanc*100).toFixed(1)+'%' : '-') + '</td>' +
+        '<td>' + Math.round(x.rq).toLocaleString() + '</td>' +
+        '<td>' + (totQty ? (x.rq/totQty*100).toFixed(3)+'%' : '-') + '</td>' +
+        '<td style="text-align:left">' + x.tops.map(function(t){
+          return esc(t.s.split(" ")[0]) + ' ' + t.r.toFixed(2) + '% (' + t.n + ')'; }).join('　／　') + '</td></tr>';
+    }).join("") : '<tr><td colspan="6" class="muted">冇資料</td></tr>';
+
     var eb = q("caEvBody");
     var ev = EVENTS.filter(function(e){ return e.n >= 3; }).slice(0, 25);
     eb.innerHTML = ev.length ? ev.map(function(e){
@@ -3071,6 +3126,7 @@ if(_isXlsx){
       }
     });
     var ap=q("caApply"); if(ap) ap.addEventListener("click", function(){ if(compute()) render(); });
+    var rs=q("caReason"); if(rs) rs.addEventListener("change", render);
     var rl=q("caReload"); if(rl) rl.addEventListener("click", function(){ refresh(true); });
     var ex=q("caExp"); if(ex) ex.addEventListener("click", exportCsv);
     var bd=q("caBody"); if(bd) bd.addEventListener("click", function(ev){
