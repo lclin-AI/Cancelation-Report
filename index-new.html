@@ -137,8 +137,10 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
       <div class="cards">
         <div class="kpi"><div class="lab">已歸因訂單行</div><div class="val" id="caLines">-</div></div>
         <div class="kpi"><div class="lab">取消／退款行</div><div class="val" id="caCanc">-</div></div>
+        <div class="kpi"><div class="lab">賣出件數</div><div class="val" id="caSold">-</div></div>
         <div class="kpi"><div class="lab">退款件數</div><div class="val" id="caQty">-</div></div>
-        <div class="kpi"><div class="lab">取消率（行）</div><div class="val red" id="caRate">-</div></div>
+        <div class="kpi"><div class="lab">退款率（件）</div><div class="val red" id="caQRate">-</div></div>
+        <div class="kpi"><div class="lab">取消率（行）</div><div class="val" id="caRate">-</div></div>
         <div class="kpi"><div class="lab">缺貨率</div><div class="val" id="caOos">-</div></div>
         <div class="kpi"><div class="lab">剔除（當日多供應商）</div><div class="val" id="caDrop">-</div></div>
       </div>
@@ -164,9 +166,9 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
             <thead><tr>
         <th data-sort="supplier" style="text-align:left">供應商</th>
         <th data-sort="lines">訂單行</th>
-        <th data-sort="qty">出售量</th>
         <th data-sort="canc">取消行</th>
         <th data-sort="rate">取消率</th>
+        <th data-sort="qty">賣出件</th>
         <th data-sort="rqty">退款件</th>
         <th data-sort="qrate">退款率</th>
         <th data-sort="oos">缺貨</th>
@@ -2943,7 +2945,9 @@ if(_isXlsx){
     AGG.forEach(function(a){ tl+=a.lines; tc+=a.canc; to2+=a.oos; tq+=a.qty; trq+=a.rqty; });
     q("caLines").textContent = tl.toLocaleString();
     q("caCanc").textContent  = tc.toLocaleString();
+    q("caSold").textContent  = Math.round(tq).toLocaleString();
     q("caQty").textContent   = Math.round(trq).toLocaleString();
+    q("caQRate").textContent = pc(trq, tq);
     q("caRate").textContent  = pc(tc, tl);
     q("caOos").textContent   = pc(to2, tl);
     q("caDrop").textContent  = drop.toLocaleString();
@@ -2981,9 +2985,9 @@ if(_isXlsx){
         return '<tr>' +
           '<td style="text-align:left"><a href="#" class="caSup" data-sup="' + esc(a.supplier) + '">' + esc(a.supplier) + '</a></td>' +
           '<td>' + a.lines.toLocaleString() + '</td>' +
-          '<td>' + Math.round(a.qty).toLocaleString() + '</td>' +
           '<td>' + a.canc + '</td>' +
           '<td' + hot + '>' + a.rate.toFixed(2) + '%</td>' +
+          '<td>' + Math.round(a.qty).toLocaleString() + '</td>' +
           '<td>' + Math.round(a.rqty).toLocaleString() + '</td>' +
           '<td>' + a.qrate.toFixed(2) + '%</td>' +
           '<td>' + a.oos + '</td><td>' + a.oosRate.toFixed(2) + '%</td>' +
