@@ -59,6 +59,9 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
   #ivTable th:nth-child(2),#ivTable td:nth-child(2),#ivTable th:nth-child(3),#ivTable td:nth-child(3),#ivTable th:nth-child(4),#ivTable td:nth-child(4),#ivTable th:nth-child(5),#ivTable td:nth-child(5){text-align:left}
   #ivTable th:nth-child(2),#ivTable td:nth-child(2){width:104px}#ivTable th:nth-child(3),#ivTable td:nth-child(3){width:152px}#ivTable th:nth-child(4),#ivTable td:nth-child(4){width:164px;white-space:nowrap}
   #ivTable th:nth-child(n+6),#ivTable td:nth-child(n+6){white-space:nowrap;font-variant-numeric:tabular-nums}#ivTable tbody tr:hover{background:#152230}
+  #tab-cancattr th{cursor:pointer;user-select:none;white-space:nowrap}
+  #tab-cancattr th .caArw{opacity:.35;font-size:10px;margin-left:3px}
+  #tab-cancattr th.caOn .caArw{opacity:1;color:var(--grn)}
 </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
@@ -218,7 +221,7 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
       <div class="card">
         <h2>按原因歸納</h2>
         <div class="scroll">
-          <table class="thin"><thead><tr>
+          <table class="thin" id="caRsnTable"><thead><tr>
             <th style="text-align:left">原因</th><th>取消行</th><th>佔取消總數</th>
             <th>退款件</th><th>退款率</th><th style="text-align:left">最高率供應商（前 3）</th>
           </tr></thead><tbody id="caRsnBody"><tr><td colspan="6" class="muted">未載入</td></tr></tbody></table>
@@ -229,7 +232,7 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
       <div class="card">
         <h2>單日事件排行（同一供應商 × SKU × 收貨日）</h2>
         <div class="scroll">
-          <table class="thin"><thead><tr>
+          <table class="thin" id="caEvTable"><thead><tr>
             <th>收貨日</th><th style="text-align:left">SKU</th><th style="text-align:left">供應商</th>
             <th>類型</th><th>單數</th><th>Batch</th><th>PO</th>
           </tr></thead><tbody id="caEvBody"><tr><td colspan="7" class="muted">未載入</td></tr></tbody></table>
@@ -239,7 +242,7 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
       <div class="card" id="caDetailWrap">
         <h2 id="caDetailHead">明細</h2>
         <div class="scroll">
-          <table class="thin"><thead><tr>
+          <table class="thin" id="caDetTable"><thead><tr>
             <th>收貨日</th><th style="text-align:left">Order</th><th style="text-align:left">SKU</th>
             <th>類型</th><th style="text-align:left">Reason</th><th>量</th><th>已出</th><th>退款</th>
             <th>Batch</th><th>PO</th><th>收貨時間</th>
@@ -3070,6 +3073,53 @@ if(_isXlsx){
     return true;
   }
 
+  /* ---------- 排序：每個欄名都可以點，第一下降序、第二下升序 ---------- */
+  var DOMSORT = {};                    /* tableId -> {idx, dir} */
+
+  function sortVal(td){
+    var t = String(td.textContent || "").trim();
+    /* 「93 (15.32%)」按前面嘅數；「1,724」去逗號；日期／文字原樣比較 */
+    var m = t.replace(/,/g, "").match(/-?\d+(?:\.\d+)?/);
+    if(m && /^[\-\d.,\s]*\d/.test(t)) return {n:parseFloat(m[0])};
+    if(t === "-" || t === "") return {n:-Infinity};
+    return {s:t};
+  }
+  function applyDomSort(tid){
+    var st = DOMSORT[tid]; if(!st) return;
+    var tbl = q(tid); if(!tbl || !tbl.tBodies[0]) return;
+    var rows = Array.prototype.slice.call(tbl.tBodies[0].rows).filter(function(r){ return r.cells.length > st.idx; });
+    if(rows.length < 2) return;
+    rows.sort(function(x, y){
+      var a = sortVal(x.cells[st.idx]), b = sortVal(y.cells[st.idx]);
+      if(a.n !== undefined && b.n !== undefined) return st.dir * (a.n - b.n);
+      return st.dir * String(a.s !== undefined ? a.s : a.n).localeCompare(String(b.s !== undefined ? b.s : b.n));
+    });
+    rows.forEach(function(r){ tbl.tBodies[0].appendChild(r); });
+  }
+  function paintArrows(tid, activeIdx, dir){
+    var tbl = q(tid); if(!tbl) return;
+    Array.prototype.forEach.call(tbl.tHead ? tbl.tHead.rows[0].cells : [], function(th, i){
+      var a = th.querySelector(".caArw");
+      if(!a){ a = document.createElement("span"); a.className = "caArw"; th.appendChild(a); }
+      var on = (i === activeIdx);
+      th.classList.toggle("caOn", on);
+      a.textContent = on ? (dir < 0 ? "▼" : "▲") : "⇅";
+    });
+  }
+  function wireDomSort(tid){
+    var tbl = q(tid); if(!tbl || !tbl.tHead || tbl.getAttribute("data-wired")) return;
+    tbl.setAttribute("data-wired", "1");
+    Array.prototype.forEach.call(tbl.tHead.rows[0].cells, function(th, i){
+      th.addEventListener("click", function(){
+        var st = DOMSORT[tid];
+        DOMSORT[tid] = (st && st.idx === i) ? {idx:i, dir:-st.dir} : {idx:i, dir:-1};
+        applyDomSort(tid);
+        paintArrows(tid, DOMSORT[tid].idx, DOMSORT[tid].dir);
+      });
+    });
+    paintArrows(tid, -1, -1);
+  }
+
   /* ---------- 畫表 ---------- */
   function render(){
     var minL = parseInt(q("caMin").value || "0", 10) || 0;
@@ -3167,6 +3217,22 @@ if(_isXlsx){
         '<td style="text-align:left">' + esc(e.sup.split(" ")[0]) + '</td><td>' + esc(e.cat) + '</td>' +
         '<td style="font-weight:600">' + e.n + '</td><td>' + esc(e.batch) + '</td><td>' + esc(e.po) + '</td></tr>';
     }).join("") : '<tr><td colspan="7" class="muted">冇 3 單或以上嘅單日事件</td></tr>';
+
+    /* 重畫之後把揀好嘅排序 re-apply，唔會一 render 就散 */
+    ["caRsnTable","caEvTable"].forEach(function(t){ wireDomSort(t); applyDomSort(t);
+      if(DOMSORT[t]) paintArrows(t, DOMSORT[t].idx, DOMSORT[t].dir); });
+    paintArrows("caTable", colIdx("caTable", sortKey), sortDir);
+    paintArrows("caMtxTable", colIdx("caMtxTable", mtxKey, "data-mtx"), mtxDir);
+  }
+
+  /* 由 data-sort / data-mtx 屬性反查欄序，用嚟畫箭頭 */
+  function colIdx(tid, key, attr){
+    var tbl = q(tid); if(!tbl || !tbl.tHead) return -1;
+    var cells = tbl.tHead.rows[0].cells;
+    for(var i=0;i<cells.length;i++){
+      if(cells[i].getAttribute(attr || "data-sort") === key) return i;
+    }
+    return -1;
   }
 
   function showDetail(sup){
@@ -3178,6 +3244,8 @@ if(_isXlsx){
         '<td style="text-align:left">' + esc(x.reason) + '</td><td>' + x.qty + '</td><td>' + x.disp + '</td>' +
         '<td>' + x.refund + '</td><td>' + esc(x.batch) + '</td><td>' + esc(x.po) + '</td><td>' + esc(x.recv) + '</td></tr>';
     }).join("") : '<tr><td colspan="11" class="muted">冇明細</td></tr>';
+    wireDomSort("caDetTable"); applyDomSort("caDetTable");
+    if(DOMSORT["caDetTable"]) paintArrows("caDetTable", DOMSORT["caDetTable"].idx, DOMSORT["caDetTable"].dir);
     try{ q("caDetailWrap").scrollIntoView({behavior:"smooth", block:"start"}); }catch(e){}
   }
 
@@ -3253,7 +3321,7 @@ if(_isXlsx){
       th.style.cursor="pointer";
       th.addEventListener("click", function(){
         var k=th.getAttribute("data-mtx");
-        if(mtxKey===k) mtxDir=-mtxDir; else { mtxKey=k; mtxDir=(k==="supplier")?1:-1; }
+        if(mtxKey===k) mtxDir=-mtxDir; else { mtxKey=k; mtxDir=-1; }        /* 第一下一律降序 */
         render();
       });
     });
@@ -3264,10 +3332,11 @@ if(_isXlsx){
       th.style.cursor="pointer";
       th.addEventListener("click", function(){
         var k=th.getAttribute("data-sort");
-        if(sortKey===k) sortDir=-sortDir; else { sortKey=k; sortDir=(k==="supplier")?1:-1; }
+        if(sortKey===k) sortDir=-sortDir; else { sortKey=k; sortDir=-1; }   /* 第一下一律降序 */
         render();
       });
     });
+    ["caRsnTable","caEvTable","caDetTable"].forEach(wireDomSort);
     ["caMin"].forEach(function(id){ var e=q(id); if(e) e.addEventListener("keydown", function(ev){ if(ev.key==="Enter"){ if(compute()) render(); } }); });
   }
 
