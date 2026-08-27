@@ -2833,6 +2833,17 @@ if(_isXlsx){
     }
     return {min:min, max:max};
   }
+  /* 每個收貨日嘅訂單行數。用嚟認出「最舊一日被截斷」：Looker export 嘅窗口
+     向前滾，最舊一日只剩部分。實測 08-20 在 _0826 檔有 37,473 行，
+     在 _0827 檔只剩 23,757 行（-37%），所以最舊一日唔可以當完整日用。 */
+  function rowDayCounts(){
+    var rows = allRows(), c = {};
+    for(var i=0;i<rows.length;i++){
+      var d = nd(rows[i].date); if(!d) continue;
+      c[d] = (c[d] || 0) + 1;
+    }
+    return c;
+  }
   /* 已核對過嘅 1P 店前綴 —— 佢哋嘅 _S_ 尾碼確認等於 IMAX B0812001-<尾碼>。
      必須用白名單，唔可以開放尾碼配對：實測有 5,567 個 3P SKU（54,642 行）
      嘅尾碼撞到 TY 倉 material，例如 63474_S_00163 樹記紫菜響鈴 會被當成
@@ -3005,6 +3016,15 @@ if(_isXlsx){
     } else {
       w.push('<span style="font-weight:600">實際計算範圍：' + esc(used[0]) + " ~ " + esc(used[used.length-1]) +
              "（" + used.length + " 日）</span>");
+      var dcx = rowDayCounts(), dsx = Object.keys(dcx).sort();
+      if(dsx.length > 2 && used.indexOf(dsx[0]) >= 0){
+        var midx = dsx.slice(1, -1).map(function(k){ return dcx[k]; }).sort(function(a,b){ return a-b; });
+        var medx = midx[Math.floor(midx.length/2)] || 0;
+        if(dcx[dsx[0]] < medx * 0.8)
+          w.push('<span style="color:#e88">⚠ ' + esc(dsx[0]) + ' 係快照最舊一日，只有 ' +
+                 dcx[dsx[0]].toLocaleString() + ' 行（其他日中位數 ' + medx.toLocaleString() +
+                 '），已被 export 窗口截斷。計入會令分母偏細、比率偏高。</span>');
+      }
       if(missing.length)
         w.push('<span style="color:#e88">⚠ 你揀嘅範圍內有 ' + missing.length + ' 日冇資料（' +
                esc(missing.slice(0,3).join("、")) + (missing.length>3 ? " …" : "") +
@@ -3135,6 +3155,13 @@ if(_isXlsx){
       var rd = rowDateRange();
       var lo = MAP_DAYS[0], hi = MAP_DAYS[MAP_DAYS.length-1];
       if(rd.min && rd.min > lo) lo = rd.min;
+      /* 最舊一日被 export 窗口截斷，跳過佢，否則分母偏細 */
+      var dc = rowDayCounts(), ds = Object.keys(dc).sort();
+      if(ds.length > 2){
+        var mid = ds.slice(1, -1).map(function(k){ return dc[k]; }).sort(function(a,b){ return a-b; });
+        var med = mid[Math.floor(mid.length/2)] || 0;
+        if(dc[ds[0]] < med * 0.8 && ds[1] > lo) lo = ds[1];
+      }
       if(rd.max && rd.max < hi) hi = rd.max;
       var y = new Date(Date.now() - 864e5).toISOString().slice(0,10);   /* 昨日 */
       if(hi > y) hi = y;
