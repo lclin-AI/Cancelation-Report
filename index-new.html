@@ -2814,6 +2814,15 @@ if(_isXlsx){
     try{ if(typeof ROWS!=="undefined" && ROWS && ROWS.length) return ROWS; }catch(e){}
     return (window.ROWS||[]);
   }
+  function todayISO(){
+    try{ if(window.__hkoToday) return window.__hkoToday; }catch(e){}
+    return new Date(Date.now() + 8*3600e3).toISOString().slice(0,10);   /* HKT */
+  }
+  function addDays(iso, n){
+    var d = new Date(iso + "T00:00:00Z");
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0,10);
+  }
   /* 取消資料實際覆蓋嘅收貨日範圍（滾動快照，每日會前移） */
   function rowDateRange(){
     var rows = allRows(), min = "", max = "";
@@ -2918,6 +2927,7 @@ if(_isXlsx){
 
     var from = q("caFrom").value || "", to = q("caTo").value || "";
     var acc = {}, drop = 0, unknown = 0, noMap = 0, det = {}, ev = {};
+    var dayLines = {};        /* 實際有貢獻嘅收貨日 -> 行數 */
 
     for(var i=0;i<rows.length;i++){
       var r = rows[i];
@@ -2935,6 +2945,7 @@ if(_isXlsx){
         rqty:0, oos:0, quality:0, missing:0, wrong:0, broken:0, other:0,
         rq:{oos:0, quality:0, missing:0, wrong:0, broken:0, other:0}});
       a.lines++; a.qty += (r.sold||0);
+      dayLines[d] = (dayLines[d] || 0) + 1;
 
       var hasReason = !isNullR(r.cancel_type) || !isNullR(r.cs_reason) || !isNullR(r.rr_reason);
       if(!hasReason) continue;
@@ -2975,6 +2986,34 @@ if(_isXlsx){
     q("caDrop").textContent  = drop.toLocaleString();
 
     var w = [];
+
+    /* ---- 實際計算範圍：唔靜靜 clamp，照用你揀嘅範圍，但講清楚實際覆蓋咗幾日 ---- */
+    var used = Object.keys(dayLines).sort();
+    var today = todayISO();
+    var missing = [], future = [];
+    if(from && to && from <= to){
+      for(var dd = from; dd <= to; dd = addDays(dd, 1)){
+        if(dayLines[dd]) { if(dd >= today) future.push(dd); continue; }
+        /* 未出貨嘅日（今日／未來預售）唔等於「冇資料」—— 訂單行存在，只係未有 batch */
+        (dd >= today ? future : missing).push(dd);
+      }
+    }
+    if(!used.length){
+      w.push('<span style="color:#e88;font-weight:600">✗ 揀咗嘅範圍冇任何可歸因資料。</span>' +
+             '取消 export 係滾動快照，只回溯到 ' + esc(rowDateRange().min || "?") +
+             '；Supplier Map 覆蓋 ' + esc(MAP_DAYS[0]||"?") + " ~ " + esc(MAP_DAYS[MAP_DAYS.length-1]||"?") + "。");
+    } else {
+      w.push('<span style="font-weight:600">實際計算範圍：' + esc(used[0]) + " ~ " + esc(used[used.length-1]) +
+             "（" + used.length + " 日）</span>");
+      if(missing.length)
+        w.push('<span style="color:#e88">⚠ 你揀嘅範圍內有 ' + missing.length + ' 日冇資料（' +
+               esc(missing.slice(0,3).join("、")) + (missing.length>3 ? " …" : "") +
+               '），未計入。取消 export 係滾動快照，每日會丟最舊一日。</span>');
+      if(future.length)
+        w.push('<span style="color:#e88">⚠ 範圍包含 ' + esc(future.join("、")) +
+               '（今日或未來預售單，貨未送完）。當日已出嘅會計入但取消未發生完，比率會偏低；' +
+               '未出貨嘅完全歸因唔到。要準確比較就揀到昨日為止。</span>');
+    }
     w.push("Supplier Map 覆蓋 " + (MAP_DAYS[0]||"?") + " ~ " + (MAP_DAYS[MAP_DAYS.length-1]||"?") + "。");
     w.push("嚴格模式：當日出貨涉多過一個供應商即整格剔除（今次剔 " + drop.toLocaleString() + " 行，分子分母一致剔）。");
     if(unknown) w.push("另有 " + unknown.toLocaleString() + " 行嘅 batch 查唔到收貨來源（IMAX 收貨紀錄超出抓取範圍），一併剔除。");
