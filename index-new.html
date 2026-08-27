@@ -137,7 +137,8 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
       <div class="cards">
         <div class="kpi"><div class="lab">已歸因訂單行</div><div class="val" id="caLines">-</div></div>
         <div class="kpi"><div class="lab">取消／退款行</div><div class="val" id="caCanc">-</div></div>
-        <div class="kpi"><div class="lab">取消率</div><div class="val red" id="caRate">-</div></div>
+        <div class="kpi"><div class="lab">退款件數</div><div class="val" id="caQty">-</div></div>
+        <div class="kpi"><div class="lab">取消率（行）</div><div class="val red" id="caRate">-</div></div>
         <div class="kpi"><div class="lab">缺貨率</div><div class="val" id="caOos">-</div></div>
         <div class="kpi"><div class="lab">剔除（當日多供應商）</div><div class="val" id="caDrop">-</div></div>
       </div>
@@ -166,6 +167,8 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
         <th data-sort="qty">出售量</th>
         <th data-sort="canc">取消行</th>
         <th data-sort="rate">取消率</th>
+        <th data-sort="rqty">退款件</th>
+        <th data-sort="qrate">退款率</th>
         <th data-sort="oos">缺貨</th>
         <th data-sort="oosRate">缺貨率</th>
         <th data-sort="quality">質素差</th>
@@ -174,7 +177,7 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
         <th data-sort="broken">外觀損壞</th>
         <th data-sort="other">其他</th>
             </tr></thead>
-            <tbody id="caBody"><tr><td colspan="12" class="muted">未載入</td></tr></tbody>
+            <tbody id="caBody"><tr><td colspan="14" class="muted">未載入</td></tr></tbody>
           </table>
         </div>
         <div class="muted" style="margin-top:8px">點供應商名可展開逐張單明細。</div>
@@ -2892,13 +2895,13 @@ if(_isXlsx){
       if(excluded(r)) continue;
 
       var a = acc[hit.sup] || (acc[hit.sup] = {supplier:hit.sup, lines:0, qty:0, canc:0,
-        oos:0, quality:0, missing:0, wrong:0, broken:0, other:0});
+        rqty:0, oos:0, quality:0, missing:0, wrong:0, broken:0, other:0});
       a.lines++; a.qty += (r.sold||0);
 
       var hasReason = !isNullR(r.cancel_type) || !isNullR(r.cs_reason) || !isNullR(r.rr_reason);
       if(!hasReason) continue;
       var cat = category(r);
-      a.canc++; a[cat]++;
+      a.canc++; a[cat]++; a.rqty += (r.refund||0);
 
       (det[hit.sup] || (det[hit.sup] = [])).push({
         date:d, order:r.order, sku:(r.sku_id + " " + (r.sku_name||"")).slice(0,52),
@@ -2916,15 +2919,17 @@ if(_isXlsx){
       var a = acc[k];
       a.rate = a.lines ? a.canc/a.lines*100 : 0;
       a.oosRate = a.lines ? a.oos/a.lines*100 : 0;
+      a.qrate = a.qty ? a.rqty/a.qty*100 : 0;      /* 件數口徑，同主要分析可比 */
     });
     AGG = Object.keys(acc).map(function(k){ return acc[k]; });
     DETAIL = det;
     EVENTS = Object.keys(ev).map(function(k){ return ev[k]; }).sort(function(x,y){ return y.n - x.n; });
 
-    var tl=0, tc=0, to2=0;
-    AGG.forEach(function(a){ tl+=a.lines; tc+=a.canc; to2+=a.oos; });
+    var tl=0, tc=0, to2=0, tq=0, trq=0;
+    AGG.forEach(function(a){ tl+=a.lines; tc+=a.canc; to2+=a.oos; tq+=a.qty; trq+=a.rqty; });
     q("caLines").textContent = tl.toLocaleString();
     q("caCanc").textContent  = tc.toLocaleString();
+    q("caQty").textContent   = Math.round(trq).toLocaleString();
     q("caRate").textContent  = pc(tc, tl);
     q("caOos").textContent   = pc(to2, tl);
     q("caDrop").textContent  = drop.toLocaleString();
@@ -2934,7 +2939,11 @@ if(_isXlsx){
     w.push("嚴格模式：當日出貨涉多過一個供應商即整格剔除（今次剔 " + drop.toLocaleString() + " 行，分子分母一致剔）。");
     if(unknown) w.push("另有 " + unknown.toLocaleString() + " 行嘅 batch 查唔到收貨來源（IMAX 收貨紀錄超出抓取範圍），一併剔除。");
     if(noMap) w.push("另有 " + noMap.toLocaleString() + " 行落在 Supplier Map 範圍外（日期未覆蓋或該 SKU 當日無出貨紀錄）。");
-    w.push("只覆蓋經 TY8F 倉嘅 1P（叮叮菓菜／DINGDONG FRESH）；3P 街市檔即日採購冇 PO，無法歸因。");
+    w.push("只覆蓋 76471_S_ / B0812001_S_（叮叮菓菜／大街市鮮貨部）經 TY8F + TY-INTERLINK 倉嘅貨；" +
+           "其他 1P 店（肉肉鮮生等）同 3P 街市檔未歸因。");
+    w.push("⚠ 同「主要分析（昨日）」對唔上係正常：該頁計『退款件數』且所有取消原因全計；" +
+           "本頁計『訂單行』並沿用 report 嘅排除規則（Fully Cancelled、2E9 追單超時、DAMAGE、no-show）。" +
+           "上面「退款件數」一欄可作件數口徑對照。");
     warn(w.join("<br>"));
     return true;
   }
@@ -2949,7 +2958,7 @@ if(_isXlsx){
       return sortDir * ((a||0)-(b||0));
     });
     var b = q("caBody");
-    if(!list.length){ b.innerHTML = '<tr><td colspan="12" class="muted">冇符合條件嘅供應商（試調低「最少訂單行」）</td></tr>'; }
+    if(!list.length){ b.innerHTML = '<tr><td colspan="14" class="muted">冇符合條件嘅供應商（試調低「最少訂單行」）</td></tr>'; }
     else{
       b.innerHTML = list.map(function(a){
         var hot = a.rate >= 5 ? ' style="color:#f88;font-weight:600"' : (a.rate >= 1 ? ' style="color:#fc8"' : '');
@@ -2959,6 +2968,8 @@ if(_isXlsx){
           '<td>' + Math.round(a.qty).toLocaleString() + '</td>' +
           '<td>' + a.canc + '</td>' +
           '<td' + hot + '>' + a.rate.toFixed(2) + '%</td>' +
+          '<td>' + Math.round(a.rqty).toLocaleString() + '</td>' +
+          '<td>' + a.qrate.toFixed(2) + '%</td>' +
           '<td>' + a.oos + '</td><td>' + a.oosRate.toFixed(2) + '%</td>' +
           '<td>' + a.quality + '</td><td>' + a.missing + '</td>' +
           '<td>' + a.wrong + '</td><td>' + a.broken + '</td><td>' + a.other + '</td></tr>';
