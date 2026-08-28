@@ -165,6 +165,7 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
           　街市 <select id="asMarket" style="width:170px;display:inline-block"><option value="">全部街市</option></select>
           　店舖 <input type="text" id="asStore" placeholder="店舖名關鍵字" style="width:150px;display:inline-block">
           　顯示上限 <input type="text" id="asLimit" value="500" style="width:60px;display:inline-block">
+          　<label class="chk" style="display:inline-block"><input type="checkbox" id="asSeafood"> 包括海鮮（魚／海鮮檔）</label>
           <button class="btn sec" id="asApply">套用</button>
           <button class="btn ghost" id="asExp">匯出 CSV</button>
         </div>
@@ -3584,16 +3585,34 @@ if(_isXlsx){
   function is1P(r){
     try{ return !!(window.is1P && (window.is1P(r.merchant) || window.is1P(r.store_name))); }catch(e){ return false; }
   }
+  /* 海鮮：兩條規則一齊用，因為單靠子品類會漏。
+     (1) 子品類「魚」8,650 行 /「海鮮」8,212 行；
+     (2) 檔口名 —— 海鮮檔亦會賣「直播貨品」「新鮮丸/滑/魚皮」「組合/套餐」，
+         呢啲品類名唔含海鮮字但貨品係海鮮。實測名稱規則捉到 51 個檔口，
+         逐個核過全部確實係海鮮生意，冇誤殺（例：(直播) 星華海鮮、好好傾鮮魚）。
+     港灣海產例外保留 —— 佢係該兩品類最大賣家（6,348 行，第二位檔口只 1,281），
+     名字冇街市後綴，屬中央營運而唔係街市檔口。 */
+  var SEAFOOD_CAT = {"魚":1, "海鮮":1};
+  var SEAFOOD_NAME = /海鮮|海產|鮮魚|淡水魚|冰鮮魚|魚檔|魚枱/;
+  var SEAFOOD_KEEP = /港灣海產/;
+  function isSeafoodStall(r){
+    var m = String(r.merchant||"");
+    if(SEAFOOD_KEEP.test(m)) return false;
+    if(SEAFOOD_CAT[String(r.type2||"").trim()]) return true;
+    return SEAFOOD_NAME.test(m);
+  }
 
   /* 同 Invisible List 一樣嘅計法，淨係去咗兩層白名單 */
   function build(){
     var rows = allRows(), m = {};
+    var inclSeafood = !!(q("asSeafood") && q("asSeafood").checked);
     for(var i=0;i<rows.length;i++){
       var r = rows[i];
       var st = String(r.status||"").replace(/[_\-]+/g," ").trim().toLowerCase();
       if(st === "fully cancelled" || st === "fully canceled") continue;
       try{ if(window.__EXCL_REASON && window.__EXCL_REASON(r.cancel_type, r.cs_reason, r.rr_reason)) continue; }catch(e){}
-      if(is1P(r)) continue;                                   /* 只除 1P */
+      if(is1P(r)) continue;                                   /* 除 1P */
+      if(!inclSeafood && isSeafoodStall(r)) continue;          /* 除海鮮檔（港灣海產除外）*/
       var sku = r.sku_id, wm = r.store_name;                  /* 注意：源檔 Store_Name 先係街市名 */
       if(!sku || !wm) continue;
       var k = sku + "||" + wm;
@@ -3654,6 +3673,9 @@ if(_isXlsx){
     q("asNote").innerHTML =
       "覆蓋全部非 1P 檔口，冇 Invisible List 嗰兩層白名單（120 個檔口 / 116 個 SKU 前綴）。" +
       "計數規則同 Invisible List 一致，所以兩頁數字可比。" +
+      (q("asSeafood") && q("asSeafood").checked
+        ? "<b>現時包括海鮮檔。</b>"
+        : "已剔除海鮮檔（子品類「魚」「海鮮」），但<b>保留港灣海產</b> —— 佢係該兩品類最大賣家、屬中央營運。") +
       "預設「出售量 &gt; 10」而唔係 Invisible List 嘅 100 —— 3P 檔口單一 SKU 銷量細，" +
       "用 100 做門檻成頁得幾行。<br>" +
       "符合條件 " + VIEW.length.toLocaleString() + " 個 (SKU × 街市)" +
@@ -3722,6 +3744,7 @@ if(_isXlsx){
     var ap=q("asApply"); if(ap) ap.addEventListener("click", render);
     var ex=q("asExp"); if(ex) ex.addEventListener("click", exportCsv);
     var mk=q("asMarket"); if(mk) mk.addEventListener("change", render);
+    var sf=q("asSeafood"); if(sf) sf.addEventListener("change", function(){ CELLS = []; render(); });
     ["asRateTh","asSoldTh","asStore","asLimit"].forEach(function(id){
       var e=q(id); if(e) e.addEventListener("keydown", function(ev){ if(ev.key==="Enter") render(); });
     });
