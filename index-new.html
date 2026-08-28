@@ -748,6 +748,25 @@ window.runAnalyze=function(){_ra();window.__lastArr=Object.values({});};
       var files = (lj.files||[]).filter(function(f){var n=(f.name||'').toLowerCase();var mt=f.mimeType||'';return n.endsWith('.csv')||n.endsWith('.xlsx')||mt==='text/csv'||mt==='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';});
       files=(lj.files||[]).filter(function(f){var n2=(f.name||'').toLowerCase();var mt2=f.mimeType||'';return n2.endsWith('.csv')||n2.endsWith('.xlsx')||mt2==='text/csv'||mt2.indexOf('spreadsheetml')!==-1||mt2.indexOf('google-apps.spreadsheet')!==-1;});
       if(!files.length){ say('資料夾中找不到 CSV 檔'); return; }
+      /* 揀最新一份要睇【檔名日期】，唔可以靠 modifiedTime。
+         實測 2026-08-28：_0827 喺 03:18 被改過，_0828 係 01:04 生成，
+         按 modifiedTime 排會揀到昨日嗰份，整個報表都讀錯日期。
+         檔名 `..._表格_MMDD` 唔會被之後嘅編輯影響，所以用佢。
+         MMDD 冇年份，年份取自該檔自己嘅 modifiedTime（同日生成），
+         再用完整日期比較，否則跨年時 0101 會排喺 1231 之後。 */
+      function _nameDate(f){
+        var m = String(f.name||'').match(/(\d{2})(\d{2})\s*$/);
+        if(!m) return '';
+        var y = String(f.modifiedTime||'').slice(0,4) || String(new Date().getUTCFullYear());
+        return y + '-' + m[1] + '-' + m[2];
+      }
+      files.sort(function(a, b){
+        var da = _nameDate(a), db = _nameDate(b);
+        if(da && db) return db < da ? -1 : (db > da ? 1 : 0);
+        if(da) return -1;                      /* 有日期嘅排前 */
+        if(db) return 1;
+        return String(b.modifiedTime||'').localeCompare(String(a.modifiedTime||''));
+      });
       var latest = files[0];
       say('載入最新檔案：'+latest.name+' …');
       var _n=(latest.name||'').toLowerCase();
