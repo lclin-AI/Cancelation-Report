@@ -3579,5 +3579,46 @@ if(_isXlsx){
 
 
 
+
+<script>
+/* ===== 版本標記 + 舊版偵測 =====
+   raw.githack 同 GitHub 都係即時 serve 最新檔（實測 X-Cache: MISS、
+   cf-cache-status: BYPASS），所以「見到舊版」一律係瀏覽器 cache。
+   之前冇任何方法喺頁面上分辨載入咗邊個版本，所以加咗呢個。 */
+window.__BUILD = "2026-08-28 12:20";
+(function(){
+  var RAW = "https://raw.githubusercontent.com/lclin-AI/Cancelation-Report/main/index-new.html";
+  function stamp(){
+    var bar = document.getElementById("dataDateBar") || document.querySelector(".tabs");
+    if(!bar){ setTimeout(stamp, 400); return; }
+    var d = document.getElementById("buildStamp");
+    if(!d){
+      d = document.createElement("div");
+      d.id = "buildStamp";
+      d.style.cssText = "font-size:11px;color:var(--mut);margin:4px 0 8px";
+      bar.parentNode.insertBefore(d, bar.nextSibling);
+    }
+    d.innerHTML = "版本 " + window.__BUILD;
+    check(d);
+  }
+  async function check(d){
+    try{
+      var t = await (await fetch(RAW, {cache:"no-store"})).text();
+      var m = t.match(/window\.__BUILD\s*=\s*"([^"]+)"/);
+      if(!m) return;                                  /* 舊版冇標記，唔亂報 */
+      if(m[1] === window.__BUILD){
+        d.innerHTML = "版本 " + window.__BUILD + " ✓ 最新";
+        return;
+      }
+      d.innerHTML = '<span style="color:#f88;font-weight:600">⚠ 你載入嘅係舊版 ' +
+        window.__BUILD + '，GitHub 上已經係 ' + m[1] +
+        '。請按 Ctrl+Shift+R 強制重載（或喺網址後面加 ?v=' + Date.now().toString().slice(-6) + '）。</span>';
+    }catch(e){ /* 離線或被擋，唔報錯 */ }
+  }
+  if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", stamp);
+  else stamp();
+})();
+</script>
+
 </body>
 </html>
