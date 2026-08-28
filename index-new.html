@@ -3585,7 +3585,7 @@ if(_isXlsx){
    raw.githack 同 GitHub 都係即時 serve 最新檔（實測 X-Cache: MISS、
    cf-cache-status: BYPASS），所以「見到舊版」一律係瀏覽器 cache。
    之前冇任何方法喺頁面上分辨載入咗邊個版本，所以加咗呢個。 */
-window.__BUILD = "2026-08-28 16:25";
+window.__BUILD = "2026-08-28 16:45";
 (function(){
   var RAW = "https://raw.githubusercontent.com/lclin-AI/Cancelation-Report/main/index-new.html";
   function stamp(){
@@ -3601,19 +3601,47 @@ window.__BUILD = "2026-08-28 16:25";
     d.innerHTML = "版本 " + window.__BUILD;
     check(d);
   }
+  var GITHACK = "https://raw.githack.com/lclin-AI/Cancelation-Report/main/index-new.html";
+  var API = "https://api.github.com/repos/lclin-AI/Cancelation-Report/contents/index-new.html?ref=main";
+
+  /* 參照來源要揀得準。實測同一刻由瀏覽器讀：
+       raw.githubusercontent 無參數      -> 舊版
+       raw.githubusercontent 加 ?nc=     -> 一樣舊（新 cache key 但上游仍然舊）
+       raw.githack 加 ?nc=               -> 正確
+     所以主用 githack。api.github.com/contents 係即時同權威（兩個 raw 節點都舊嘅時候
+     佢讀到正確版本），但未認證只有 60 次/小時，所以只做後備。 */
+  function pick(t){
+    var m = String(t||"").match(/window\.__BUILD\s*=\s*"([^"]+)"/);
+    return m ? m[1] : null;
+  }
+  async function remoteBuild(){
+    try{
+      var b = pick(await (await fetch(GITHACK + "?nc=" + Date.now(), {cache:"no-store"})).text());
+      if(b) return b;
+    }catch(e){}
+    try{
+      var j = await (await fetch(API)).json();
+      if(j && j.content){
+        var bin = atob(String(j.content).replace(/\n/g, ""));
+        return pick(new TextDecoder("utf-8").decode(Uint8Array.from(bin, function(c){ return c.charCodeAt(0); })));
+      }
+    }catch(e){}
+    return null;
+  }
   async function check(d){
     try{
-      /* 一定要加 cache-bust 參數：GitHub raw 唔同 Fastly 邊緣節點會 serve 唔同版本，
-         實測同一刻 curl 拿到新版而瀏覽器拿到舊版（差 22KB）。加 query 之後正確。 */
-      var t = await (await fetch(RAW + "?nc=" + Date.now(), {cache:"no-store"})).text();
-      var m = t.match(/window\.__BUILD\s*=\s*"([^"]+)"/);
-      if(!m) return;                                  /* 舊版冇標記，唔亂報 */
-      if(m[1] === window.__BUILD){
+      var latest = sessionStorage.getItem("caBuildLatest");
+      if(!latest){
+        latest = await remoteBuild();
+        if(latest) try{ sessionStorage.setItem("caBuildLatest", latest); }catch(e){}
+      }
+      if(!latest) return;                             /* 讀唔到就唔亂報 */
+      if(latest === window.__BUILD){
         d.innerHTML = "版本 " + window.__BUILD + " ✓ 最新";
         return;
       }
       d.innerHTML = '<span style="color:#f88;font-weight:600">⚠ 你載入嘅係舊版 ' +
-        window.__BUILD + '，GitHub 上已經係 ' + m[1] +
+        window.__BUILD + '，最新係 ' + latest +
         '。請按 Ctrl+Shift+R 強制重載（或喺網址後面加 ?v=' + Date.now().toString().slice(-6) + '）。</span>';
     }catch(e){ /* 離線或被擋，唔報錯 */ }
   }
