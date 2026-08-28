@@ -1053,7 +1053,13 @@ if(_isXlsx){
         if(window.__EXCL_REASON && window.__EXCL_REASON(row["sku_cancel_reason"],row["sku_cs_refund_reason"],row["REFUND_REPORT_CANCEL_reason"])) continue;
         var _store=(row["Wet_Market"]||row["merchant_name"]||wm);
         if(window.only3P && window.only3P() && window.is1P && window.is1P(_store)) continue;
-        if(window.__IV_SKU_ALLOWED && !window.__IV_SKU_ALLOWED(sku)) continue;
+        /* 範圍要同 compute() 一致，否則喺「全部貨品」頁匯出會被白名單隔走大部分 SKU，
+           出到嚟得幾行甚至空白。 */
+        if(window.__IV_SCOPE!=="all" && window.__IV_SKU_ALLOWED && !window.__IV_SKU_ALLOWED(sku)) continue;
+        if(window.__IV_SCOPE==="all"){
+          var _isf=q("ivSeafood");
+          if(!(_isf&&_isf.checked) && window.__IV_IS_SEAFOOD && window.__IV_IS_SEAFOOD(_store, row["sub_cat1_name_zh"])) continue;
+        }
         if(stVal && String(stVal).indexOf(String(_store))===-1) continue;
         var cr=String(row["sku_cancel_reason"]==null?"":row["sku_cancel_reason"]).trim();
         if(!cr || cr.toLowerCase()==="null") continue;
@@ -1067,7 +1073,7 @@ if(_isXlsx){
       var csv=out.map(function(r){ return r.map(function(v){ v=String(v==null?"":v); return /[",\n\r]/.test(v)?("\""+v.replace(/"/g,"\"\"")+"\""):v; }).join(","); }).join(String.fromCharCode(10));
       var blob=new Blob([String.fromCharCode(0xFEFF)+csv],{type:"text/csv;charset=utf-8;"});
       var a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=(ONE?("invisible_raw_"+String(ONE.sku).replace(/[^A-Za-z0-9._-]/g,"_")+".csv"):"invisible_raw_cancel.csv"); document.body.appendChild(a); a.click(); a.remove();
-      var inf=q("ivInfo"); if(inf){ inf.textContent="\u5df2\u532f\u51fa "+nrow+" \u884c\u539f\u59cb\u53d6\u6d88\u8a18\u9304\uff08\u5171 "+qty+" \u4ef6\uff0c"+npair+" \u500b SKU \u00d7 \u8857\u5e02\uff1b\u7bc4\u570d\uff1a"+(onlyTable?"\u8868\u5185 SKU":"\u5168\u90e8\u767d\u540d\u55ae SKU")+"\uff09"; }
+      var inf=q("ivInfo"); if(inf){ inf.textContent="\u5df2\u532f\u51fa "+nrow+" \u884c\u539f\u59cb\u53d6\u6d88\u8a18\u9304\uff08\u5171 "+qty+" \u4ef6\uff0c"+npair+" \u500b SKU \u00d7 \u8857\u5e02\uff1b\u7bc4\u570d\uff1a"+(onlyTable?"\u8868\u5185 SKU":(window.__IV_SCOPE==="all"?"\u5168\u90e8\u975e 1P SKU":"\u5168\u90e8\u767d\u540d\u55ae SKU"))+"\uff09"; }
     }
     function exportCsv(){
     var rows=[["Wet Market","Store","SKU ID","SKU Name","Sold","Cancel","Rate %"]];
@@ -3596,7 +3602,7 @@ if(_isXlsx){
    raw.githack 同 GitHub 都係即時 serve 最新檔（實測 X-Cache: MISS、
    cf-cache-status: BYPASS），所以「見到舊版」一律係瀏覽器 cache。
    之前冇任何方法喺頁面上分辨載入咗邊個版本，所以加咗呢個。 */
-window.__BUILD = "2026-08-28 18:05";
+window.__BUILD = "2026-08-28 18:50";
 (function(){
   var RAW = "https://raw.githubusercontent.com/lclin-AI/Cancelation-Report/main/index-new.html";
   function stamp(){
