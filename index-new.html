@@ -140,12 +140,11 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
 
     <div id="tab-cancattr" style="display:none">
       <div class="cards">
-        <div class="kpi"><div class="lab">已歸因訂單行</div><div class="val" id="caLines">-</div></div>
-        <div class="kpi"><div class="lab">取消／退款行</div><div class="val" id="caCanc">-</div></div>
-        <div class="kpi"><div class="lab">賣出件數</div><div class="val" id="caSold">-</div></div>
-        <div class="kpi"><div class="lab">退款件數</div><div class="val" id="caQty">-</div></div>
+        <div class="kpi"><div class="lab">賣出（件）</div><div class="val" id="caSold">-</div></div>
+        <div class="kpi"><div class="lab">退款（件）</div><div class="val" id="caQty">-</div></div>
         <div class="kpi"><div class="lab">退款率（件）</div><div class="val red" id="caQRate">-</div></div>
-        <div class="kpi"><div class="lab">取消率（行）</div><div class="val" id="caRate">-</div></div>
+        <div class="kpi"><div class="lab">取消率</div><div class="val" id="caRate">-</div></div>
+        <span id="caLines" style="display:none"></span><span id="caCanc" style="display:none"></span>
         <div class="kpi"><div class="lab">缺貨率</div><div class="val" id="caOos">-</div></div>
         <div class="kpi"><div class="lab">剔除（當日多供應商）</div><div class="val" id="caDrop">-</div></div>
       </div>
@@ -182,20 +181,18 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
           <table class="thin" id="caTable">
             <thead><tr>
         <th data-sort="supplier" style="text-align:left">供應商</th>
-        <th data-sort="lines">訂單行</th>
-        <th data-sort="canc">取消行</th>
         <th data-sort="rate">取消率</th>
-        <th data-sort="qty">賣出件</th>
-        <th data-sort="rqty">退款件</th>
+        <th data-sort="qty">賣出（件）</th>
+        <th data-sort="rqty">退款（件）</th>
         <th data-sort="qrate">退款率</th>
-        <th data-sort="oosRate">缺貨</th>
-        <th data-sort="quality">質素差</th>
-        <th data-sort="missing">缺漏</th>
-        <th data-sort="wrong">送錯貨</th>
-        <th data-sort="broken">外觀損壞</th>
-        <th data-sort="other">其他</th>
+        <th data-sort="oosRate">缺貨（件）</th>
+        <th data-sort="quality">質素差（件）</th>
+        <th data-sort="missing">缺漏（件）</th>
+        <th data-sort="wrong">送錯貨（件）</th>
+        <th data-sort="broken">外觀損壞（件）</th>
+        <th data-sort="other">其他（件）</th>
             </tr></thead>
-            <tbody id="caBody"><tr><td colspan="13" class="muted">未載入</td></tr></tbody>
+            <tbody id="caBody"><tr><td colspan="11" class="muted">未載入</td></tr></tbody>
           </table>
         </div>
         <div class="muted" style="margin-top:8px">點供應商名可展開逐張單明細。</div>
@@ -207,30 +204,30 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
           <table class="thin" id="caMtxTable">
             <thead><tr>
               <th data-mtx="supplier" style="text-align:left">供應商</th>
-              <th data-mtx="lines">訂單行</th>
-              <th data-mtx="oos">缺貨</th>
-              <th data-mtx="quality">質素差</th>
-              <th data-mtx="missing">缺漏</th>
-              <th data-mtx="wrong">送錯貨</th>
-              <th data-mtx="broken">外觀損壞</th>
-              <th data-mtx="other">其他</th>
-              <th data-mtx="canc">合計</th>
+              <th data-mtx="qty">賣出（件）</th>
+              <th data-mtx="oos">缺貨（件）</th>
+              <th data-mtx="quality">質素差（件）</th>
+              <th data-mtx="missing">缺漏（件）</th>
+              <th data-mtx="wrong">送錯貨（件）</th>
+              <th data-mtx="broken">外觀損壞（件）</th>
+              <th data-mtx="other">其他（件）</th>
+              <th data-mtx="rqty">合計（件）</th>
             </tr></thead>
             <tbody id="caMtxBody"><tr><td colspan="9" class="muted">未載入</td></tr></tbody>
           </table>
         </div>
-        <div class="muted" style="margin-top:8px">每格 = 該原因嘅取消行數（佔該供應商訂單行嘅比率）。分母係同一個，所以橫向、縱向都可比。點欄名可排序。</div>
+        <div class="muted" style="margin-top:8px">每格 = 該原因嘅取消／退款件數（佔該供應商賣出件數嘅比率）。分母係同一個，所以橫向、縱向都可比。點欄名可排序。</div>
       </div>
 
       <div class="card">
         <h2>按原因歸納</h2>
         <div class="scroll">
           <table class="thin" id="caRsnTable"><thead><tr>
-            <th style="text-align:left">原因</th><th>取消行</th><th>佔取消總數</th>
-            <th>退款件</th><th>退款率</th><th style="text-align:left">最高率供應商（前 3）</th>
-          </tr></thead><tbody id="caRsnBody"><tr><td colspan="6" class="muted">未載入</td></tr></tbody></table>
+            <th style="text-align:left">原因</th><th>取消／退款（件）</th><th>佔取消總數</th>
+            <th>取消率（件）</th><th style="text-align:left">最高率供應商（前 3）</th>
+          </tr></thead><tbody id="caRsnBody"><tr><td colspan="5" class="muted">未載入</td></tr></tbody></table>
         </div>
-        <div class="muted" style="margin-top:8px">退款率 = 該原因嘅退款件 ÷ 全部已歸因賣出件。缺貨屬供應商交貨責任，其餘屬貨質／揀貨。</div>
+        <div class="muted" style="margin-top:8px">取消率（件）= 該原因嘅取消／退款件 ÷ 全部已歸因賣出件。缺貨屬供應商交貨責任，其餘屬貨質／揀貨。件數計法：有退款件用退款件，冇就用未送出嘅數，最少 1 件。</div>
       </div>
 
       <div class="card">
@@ -248,7 +245,7 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
         <div class="scroll">
           <table class="thin" id="caDetTable"><thead><tr>
             <th>收貨日</th><th style="text-align:left">Order</th><th style="text-align:left">SKU</th>
-            <th>類型</th><th style="text-align:left">Reason</th><th>量</th><th>已出</th><th>退款</th>
+            <th>類型</th><th style="text-align:left">Reason</th><th>落單（件）</th><th>已出（件）</th><th>退款（件）</th>
             <th>Batch</th><th>PO</th><th>收貨時間</th>
           </tr></thead><tbody id="caDetBody"><tr><td colspan="11" class="muted">點上面嘅供應商名</td></tr></tbody></table>
         </div>
@@ -3175,7 +3172,12 @@ if(_isXlsx){
       var hasReason = !isNullR(r.cancel_type) || !isNullR(r.cs_reason) || !isNullR(r.rr_reason);
       if(!hasReason) continue;
       var cat = category(r);
-      a.canc++; a[cat]++; a.rqty += (r.refund||0); a.rq[cat] += (r.refund||0);
+      /* 件數：有退款件就用退款件；冇（實測 678 行中有 34 行係 0，集中喺質素差同缺漏）
+         就用未送出嘅數，再唔係就當 1 件 —— 唔可以令一件已記錄嘅事件消失。 */
+      /* 唔可以叫 pc —— 上面已有 function pc(n,d) 做百分比格式化，var 會 hoist 蓋住佢 */
+      var pieces = (r.refund||0);
+      if(pieces <= 0) pieces = Math.max((r.sold||0) - (r.dispatched||0), 1);
+      a.canc++; a[cat]++; a.rqty += pieces; a.rq[cat] += pieces;
 
       (det[hit.sup] || (det[hit.sup] = [])).push({
         date:d, order:r.order, sku:(r.sku_id + " " + (r.sku_name||"")).slice(0,52),
@@ -3337,24 +3339,22 @@ if(_isXlsx){
       return sortDir * ((a||0)-(b||0));
     });
     var b = q("caBody");
-    if(!list.length){ b.innerHTML = '<tr><td colspan="13" class="muted">冇符合條件嘅供應商（試調低「最少訂單行」）</td></tr>'; }
+    if(!list.length){ b.innerHTML = '<tr><td colspan="11" class="muted">冇符合條件嘅供應商（試調低「最少訂單行」）</td></tr>'; }
     else{
       b.innerHTML = list.map(function(a){
         var hot = a.rate >= 5 ? ' style="color:#f88;font-weight:600"' : (a.rate >= 1 ? ' style="color:#fc8"' : '');
         return '<tr>' +
           '<td style="text-align:left"><a href="#" class="caSup" data-sup="' + esc(a.supplier) + '">' + esc(a.supplier) + '</a></td>' +
-          '<td>' + a.lines.toLocaleString() + '</td>' +
-          '<td>' + a.canc + '</td>' +
           '<td' + hot + '>' + a.rate.toFixed(2) + '%</td>' +
           '<td>' + Math.round(a.qty).toLocaleString() + '</td>' +
           '<td>' + Math.round(a.rqty).toLocaleString() + '</td>' +
           '<td>' + a.qrate.toFixed(2) + '%</td>' +
           ["oos","quality","missing","wrong","broken","other"].map(function(c){
-            var n = a[c] || 0;
+            var n = Math.round(a.rq[c] || 0);
             if(!n) return '<td class="muted">-</td>';
-            var rt = a.lines ? n/a.lines*100 : 0;
+            var rt = a.qty ? n/a.qty*100 : 0;
             var st = rt >= 5 ? ' style="color:#f88;font-weight:600"' : (rt >= 1 ? ' style="color:#fc8"' : '');
-            return '<td' + st + '>' + n + '<span class="muted"> (' + rt.toFixed(2) + '%)</span></td>';
+            return '<td' + st + '>' + n.toLocaleString() + '<span class="muted"> (' + rt.toFixed(2) + '%)</span></td>';
           }).join("") + '</tr>';
       }).join("");
     }
@@ -3362,48 +3362,55 @@ if(_isXlsx){
     var MCATS = ["oos","quality","missing","wrong","broken","other"];
     var mlist = AGG.filter(function(a){ return a.lines >= minL; });
     mlist.sort(function(x,y){
-      var a = mtxKey === "supplier" ? x.supplier : (mtxKey === "lines" ? x.lines : (x[mtxKey]||0)/(x.lines||1));
-      var b = mtxKey === "supplier" ? y.supplier : (mtxKey === "lines" ? y.lines : (y[mtxKey]||0)/(y.lines||1));
+      var mv = function(o){
+        if(mtxKey === "supplier") return o.supplier;
+        if(mtxKey === "qty") return o.qty;
+        if(mtxKey === "rqty") return o.qty ? o.rqty/o.qty : 0;
+        return o.qty ? (o.rq[mtxKey]||0)/o.qty : 0;
+      };
+      var a = mv(x), b = mv(y);
       if(typeof a === "string") return mtxDir * String(a).localeCompare(String(b));
       return mtxDir * (a - b);
     });
     var mb = q("caMtxBody");
     mb.innerHTML = mlist.length ? mlist.map(function(a){
       return '<tr><td style="text-align:left"><a href="#" class="caSup" data-sup="' + esc(a.supplier) + '">' +
-        esc(a.supplier) + '</a></td><td>' + a.lines.toLocaleString() + '</td>' +
+        esc(a.supplier) + '</a></td><td>' + Math.round(a.qty).toLocaleString() + '</td>' +
         MCATS.map(function(c){
-          var n = a[c] || 0;
+          var n = Math.round(a.rq[c] || 0);
           if(!n) return '<td class="muted">-</td>';
-          var rt = a.lines ? n/a.lines*100 : 0;
+          var rt = a.qty ? n/a.qty*100 : 0;
           var st = rt >= 5 ? ' style="color:#f88;font-weight:600"' : (rt >= 1 ? ' style="color:#fc8"' : '');
-          return '<td' + st + '>' + n + '<span class="muted"> (' + rt.toFixed(2) + '%)</span></td>';
+          return '<td' + st + '>' + n.toLocaleString() + '<span class="muted"> (' + rt.toFixed(2) + '%)</span></td>';
         }).join("") +
-        '<td>' + a.canc + '<span class="muted"> (' + (a.lines ? (a.canc/a.lines*100).toFixed(2) : "0.00") + '%)</span></td></tr>';
+        '<td>' + Math.round(a.rqty).toLocaleString() + '<span class="muted"> (' +
+        (a.qty ? (a.rqty/a.qty*100).toFixed(2) : "0.00") + '%)</span></td></tr>';
     }).join("") : '<tr><td colspan="9" class="muted">冇符合條件嘅供應商</td></tr>';
 
     /* ---- 按原因歸納 ---- */
     var CATS = ["oos","quality","missing","wrong","broken","other"];
     var totQty = 0, totCanc = 0;
-    AGG.forEach(function(a){ totQty += a.qty; totCanc += a.canc; });
+    AGG.forEach(function(a){ totQty += a.qty; totCanc += a.rqty; });
     var rb = q("caRsnBody");
     var rrows = CATS.map(function(c){
       var n = 0, rq = 0, tops = [];
       AGG.forEach(function(a){
         n += a[c] || 0; rq += a.rq[c] || 0;
-        if((a[c]||0) > 0 && a.lines >= minL) tops.push({s:a.supplier, r:a[c]/a.lines*100, n:a[c]});
+        if((a.rq[c]||0) > 0 && a.lines >= minL)
+          tops.push({s:a.supplier, r:a.qty ? a.rq[c]/a.qty*100 : 0, n:Math.round(a.rq[c])});
       });
       tops.sort(function(x,y){ return y.r - x.r; });
       return {cat:c, n:n, rq:rq, tops:tops.slice(0,3)};
-    }).filter(function(x){ return x.n > 0; }).sort(function(x,y){ return y.n - x.n; });
+    }).filter(function(x){ return x.rq > 0; }).sort(function(x,y){ return y.rq - x.rq; });
     rb.innerHTML = rrows.length ? rrows.map(function(x){
       var hi = x.cat === "oos" ? ' style="color:#fc8"' : '';
       return '<tr><td style="text-align:left"' + hi + '>' + esc(CAT_LABEL[x.cat]) + '</td>' +
-        '<td>' + x.n + '</td><td>' + (totCanc ? (x.n/totCanc*100).toFixed(1)+'%' : '-') + '</td>' +
         '<td>' + Math.round(x.rq).toLocaleString() + '</td>' +
+        '<td>' + (totCanc ? (x.rq/totCanc*100).toFixed(1)+'%' : '-') + '</td>' +
         '<td>' + (totQty ? (x.rq/totQty*100).toFixed(3)+'%' : '-') + '</td>' +
         '<td style="text-align:left">' + x.tops.map(function(t){
           return esc(t.s.split(" ")[0]) + ' ' + t.r.toFixed(2) + '% (' + t.n + ')'; }).join('　／　') + '</td></tr>';
-    }).join("") : '<tr><td colspan="6" class="muted">冇資料</td></tr>';
+    }).join("") : '<tr><td colspan="5" class="muted">冇資料</td></tr>';
 
     var eb = q("caEvBody");
     var ev = EVENTS.filter(function(e){ return e.n >= 3; }).slice(0, 25);
@@ -3585,7 +3592,7 @@ if(_isXlsx){
    raw.githack 同 GitHub 都係即時 serve 最新檔（實測 X-Cache: MISS、
    cf-cache-status: BYPASS），所以「見到舊版」一律係瀏覽器 cache。
    之前冇任何方法喺頁面上分辨載入咗邊個版本，所以加咗呢個。 */
-window.__BUILD = "2026-08-28 16:45";
+window.__BUILD = "2026-08-28 17:45";
 (function(){
   var RAW = "https://raw.githubusercontent.com/lclin-AI/Cancelation-Report/main/index-new.html";
   function stamp(){
