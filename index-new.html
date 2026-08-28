@@ -62,6 +62,10 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
   #tab-cancattr th{cursor:pointer;user-select:none;white-space:nowrap}
   #tab-cancattr th .caArw{opacity:.35;font-size:10px;margin-left:3px}
   #tab-cancattr th.caOn .caArw{opacity:1;color:var(--grn)}
+  /* 供應商名係 <a>，唔加樣式就會用瀏覽器預設嘅藍色連結色。
+     用一般文字色，hover 才加下劃線，仍然睇得出可以點。 */
+  #tab-cancattr a.caSup{color:var(--txt);text-decoration:none}
+  #tab-cancattr a.caSup:hover{text-decoration:underline;color:#fff}
 </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
@@ -3592,7 +3596,7 @@ if(_isXlsx){
    raw.githack 同 GitHub 都係即時 serve 最新檔（實測 X-Cache: MISS、
    cf-cache-status: BYPASS），所以「見到舊版」一律係瀏覽器 cache。
    之前冇任何方法喺頁面上分辨載入咗邊個版本，所以加咗呢個。 */
-window.__BUILD = "2026-08-28 17:45";
+window.__BUILD = "2026-08-28 18:05";
 (function(){
   var RAW = "https://raw.githubusercontent.com/lclin-AI/Cancelation-Report/main/index-new.html";
   function stamp(){
