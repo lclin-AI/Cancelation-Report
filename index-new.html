@@ -3585,7 +3585,7 @@ if(_isXlsx){
    raw.githack 同 GitHub 都係即時 serve 最新檔（實測 X-Cache: MISS、
    cf-cache-status: BYPASS），所以「見到舊版」一律係瀏覽器 cache。
    之前冇任何方法喺頁面上分辨載入咗邊個版本，所以加咗呢個。 */
-window.__BUILD = "2026-08-28 12:20";
+window.__BUILD = "2026-08-28 16:25";
 (function(){
   var RAW = "https://raw.githubusercontent.com/lclin-AI/Cancelation-Report/main/index-new.html";
   function stamp(){
@@ -3603,7 +3603,9 @@ window.__BUILD = "2026-08-28 12:20";
   }
   async function check(d){
     try{
-      var t = await (await fetch(RAW, {cache:"no-store"})).text();
+      /* 一定要加 cache-bust 參數：GitHub raw 唔同 Fastly 邊緣節點會 serve 唔同版本，
+         實測同一刻 curl 拿到新版而瀏覽器拿到舊版（差 22KB）。加 query 之後正確。 */
+      var t = await (await fetch(RAW + "?nc=" + Date.now(), {cache:"no-store"})).text();
       var m = t.match(/window\.__BUILD\s*=\s*"([^"]+)"/);
       if(!m) return;                                  /* 舊版冇標記，唔亂報 */
       if(m[1] === window.__BUILD){
