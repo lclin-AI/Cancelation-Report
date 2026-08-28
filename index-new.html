@@ -2992,12 +2992,14 @@ if(_isXlsx){
   async function ensureRange(from, to){
     await loadSnapIndex();
     var need = {}, byTag = {};
-    var haveLatest = {};
-    allRows().forEach(function(r){ var d = nd(r.date); if(d) haveLatest[d] = 1; });
+    var haveLatest = {}, latestOldest = "";
+    allRows().forEach(function(r){ var d = nd(r.date); if(!d) return;
+      haveLatest[d] = 1; if(!latestOldest || d < latestOldest) latestOldest = d; });
     for(var d = from; d <= to; d = addDays(d, 1)){
       if(HIST[d]) continue;
       var own = ownerOf(d); if(!own) continue;
-      if(own.tag === SNAPS[0].tag && haveLatest[d]) continue;   /* 最新一份主報表已載入 */
+      /* 主報表已有而且唔係佢自己被截斷嗰日 -> 唔使再抓 */
+      if(haveLatest[d] && d !== latestOldest) continue;
       need[d] = 1; (byTag[own.tag] || (byTag[own.tag] = {}))[d] = 1;
     }
     var tags = Object.keys(byTag).sort().reverse();
@@ -3015,9 +3017,17 @@ if(_isXlsx){
     return total;
   }
 
-  /* 主報表最新快照 + 歷史快照，逐日取其一 */
+  /* 主報表最新快照 + 歷史快照，逐日取其一。
+     ⚠ 每份每日檔案覆蓋 7 日，所以相鄰快照大量重疊：同一張單同一件 SKU
+     會同時出現喺主報表同歷史快照。HIST 有嘅日子一律以 HIST 為準，
+     ROWS 嗰日全部唔要，否則嗰日會被計兩次。 */
   function mergedRows(){
-    var out = allRows().slice();
+    var out = [], rows = allRows();
+    for(var i=0;i<rows.length;i++){
+      var d = nd(rows[i].date);
+      if(d && HIST[d]) continue;                  /* 該日已由歷史快照提供 */
+      out.push(rows[i]);
+    }
     Object.keys(HIST).forEach(function(d){ out = out.concat(HIST[d]); });
     return out;
   }
@@ -3155,14 +3165,19 @@ if(_isXlsx){
     } else {
       w.push('<span style="font-weight:600">實際計算範圍：' + esc(used[0]) + " ~ " + esc(used[used.length-1]) +
              "（" + used.length + " 日）</span>");
-      var dcx = rowDayCounts(), dsx = Object.keys(dcx).sort();
-      if(dsx.length > 2 && used.indexOf(dsx[0]) >= 0){
-        var midx = dsx.slice(1, -1).map(function(k){ return dcx[k]; }).sort(function(a,b){ return a-b; });
+      /* 以實際參與計算嘅日子做基準，兩頭檢查有冇唔完整嘅一日 */
+      var dcx = rowDayCounts();
+      if(used.length > 2){
+        var midx = used.map(function(k){ return dcx[k] || 0; }).sort(function(a,b){ return a-b; });
         var medx = midx[Math.floor(midx.length/2)] || 0;
-        if(dcx[dsx[0]] < medx * 0.8)
-          w.push('<span style="color:#e88">⚠ ' + esc(dsx[0]) + ' 係快照最舊一日，只有 ' +
-                 dcx[dsx[0]].toLocaleString() + ' 行（其他日中位數 ' + medx.toLocaleString() +
-                 '），已被 export 窗口截斷。計入會令分母偏細、比率偏高。</span>');
+        [[used[0], "最舊一日，已被 export 窗口截斷"],
+         [used[used.length-1], "最新一日，抓檔時仲未送完"]].forEach(function(pair){
+          var d = pair[0];
+          if((dcx[d] || 0) < medx * 0.8)
+            w.push('<span style="color:#e88">⚠ ' + esc(d) + ' 係' + pair[1] + '，只有 ' +
+                   (dcx[d]||0).toLocaleString() + ' 行（其他日中位數 ' + medx.toLocaleString() +
+                   '），分母偏細、比率會失真。想準確就剔走呢一日。</span>');
+        });
       }
       if(missing.length)
         w.push('<span style="color:#e88">⚠ 你揀嘅範圍內有 ' + missing.length + ' 日冇資料（' +
@@ -3407,12 +3422,17 @@ if(_isXlsx){
       var rd = rowDateRange();
       var lo = MAP_DAYS[0], hi = MAP_DAYS[MAP_DAYS.length-1];
       if(rd.min && rd.min > lo) lo = rd.min;
-      /* 最舊一日被 export 窗口截斷，跳過佢，否則分母偏細 */
-      var dc = rowDayCounts(), ds = Object.keys(dc).sort();
+      /* 兩頭嘅日子都可能唔完整：最舊一日被 export 窗口截斷，最新一日可能係
+         抓檔嗰陣仲未送完。只睇會真正參與計算嘅日子（唔計未來預售日），
+         用佢哋嘅中位數做基準，兩頭逐日修剪。 */
+      var dc = rowDayCounts();
+      var ds = Object.keys(dc).filter(function(d){ return d >= lo && d <= hi; }).sort();
       if(ds.length > 2){
-        var mid = ds.slice(1, -1).map(function(k){ return dc[k]; }).sort(function(a,b){ return a-b; });
+        var mid = ds.map(function(k){ return dc[k]; }).sort(function(a,b){ return a-b; });
         var med = mid[Math.floor(mid.length/2)] || 0;
-        if(dc[ds[0]] < med * 0.8 && ds[1] > lo) lo = ds[1];
+        while(ds.length > 1 && dc[ds[0]] < med * 0.8){ ds.shift(); }
+        while(ds.length > 1 && dc[ds[ds.length-1]] < med * 0.8){ ds.pop(); }
+        lo = ds[0]; hi = ds[ds.length-1];
       }
       if(rd.max && rd.max < hi) hi = rd.max;
       var y = new Date(Date.now() - 864e5).toISOString().slice(0,10);   /* 昨日 */
