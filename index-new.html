@@ -128,6 +128,7 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
       <div class="tab" data-tab="detail">Order 明細</div>
       <div class="tab" data-tab="invisible">Invisible List</div>
       <div class="tab" data-tab="cancattr">取消歸因</div>
+      <div class="tab" data-tab="allsku">全部貨品（非 1P）</div>
     </div>
 
     <!-- 取消歸因 (Cancellation -> Supplier) — 2026-08-27
@@ -136,6 +137,59 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
                    (AI/imax_supplier_map.py)。
          嚴格模式：當日出貨涉多過一個供應商，該 (SKU × 收貨日) 分子分母一齊剔。
          只覆蓋經 TY8F 倉嘅 1P（叮叮菓菜 / DINGDONG FRESH）；3P 街市檔冇 PO。 -->
+
+    <!-- ===================================================================
+         全部貨品（非 1P） — 2026-08-28
+         同 Invisible List 一樣嘅計法，但除去佢嘅兩層白名單：
+           __IV_STORE_WL      120 個指定檔口
+           __IV_SKU_ALLOWED   116 個 SKU 前綴
+         只保留「排除 1P」。實測白名單只覆蓋非 1P 貨品 37.5% 嘅 SKU，
+         呢一頁覆蓋全部 16,787 個。
+         計數規則同 Invisible List 一致（Fully Cancelled 不計、__EXCL_REASON
+         排除、__NO_CANCEL_COUNT 決定退款算唔算商戶頭上），所以兩頁可比。
+         =================================================================== -->
+    <div id="tab-allsku" style="display:none">
+      <div class="cards">
+        <div class="kpi"><div class="lab">SKU × 街市</div><div class="val" id="asCells">-</div></div>
+        <div class="kpi"><div class="lab">符合條件</div><div class="val" id="asHit">-</div></div>
+        <div class="kpi"><div class="lab">總出售量</div><div class="val" id="asSold">-</div></div>
+        <div class="kpi"><div class="lab">總取消/退款量</div><div class="val" id="asCancel">-</div></div>
+        <div class="kpi"><div class="lab">整體取消率</div><div class="val red" id="asRate">-</div></div>
+      </div>
+
+      <div class="card">
+        <h2>篩選</h2>
+        <div class="muted">
+          取消率 &gt; <input type="text" id="asRateTh" value="1" style="width:60px;display:inline-block"> %
+          　出售量 &gt; <input type="text" id="asSoldTh" value="10" style="width:70px;display:inline-block">
+          　街市 <select id="asMarket" style="width:170px;display:inline-block"><option value="">全部街市</option></select>
+          　店舖 <input type="text" id="asStore" placeholder="店舖名關鍵字" style="width:150px;display:inline-block">
+          　顯示上限 <input type="text" id="asLimit" value="500" style="width:60px;display:inline-block">
+          <button class="btn sec" id="asApply">套用</button>
+          <button class="btn ghost" id="asExp">匯出 CSV</button>
+        </div>
+        <div class="muted" id="asNote" style="margin-top:8px"></div>
+      </div>
+
+      <div class="card">
+        <h2>貨品取消率（全部非 1P 檔口）</h2>
+        <div class="scroll" style="max-height:70vh">
+          <table class="thin" id="asTable">
+            <thead><tr>
+              <th style="text-align:left">街市 Wet Market</th>
+              <th style="text-align:left">店舖 Store</th>
+              <th style="text-align:left">SKU ID</th>
+              <th style="text-align:left">SKU 名稱</th>
+              <th>出售量</th>
+              <th>取消/退款量</th>
+              <th>取消率 %</th>
+            </tr></thead>
+            <tbody id="asBody"><tr><td colspan="7" class="muted">未載入</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <div id="tab-cancattr" style="display:none">
       <div class="cards">
         <div class="kpi"><div class="lab">已歸因訂單行</div><div class="val" id="caLines">-</div></div>
@@ -3448,7 +3502,7 @@ if(_isXlsx){
   /* ---------- 分頁切換 ---------- */
   function switchTo(){
     document.querySelectorAll(".tab").forEach(function(t){ t.classList.toggle("on", t.dataset.tab===TAB_NAME); });
-    ["tab-main","tab-yday","tab-detail","tab-invisible","tab-badcmt","tab-ivtask","tab-ivlog"].forEach(function(id){
+    ["tab-main","tab-yday","tab-detail","tab-invisible","tab-badcmt","tab-ivtask","tab-ivlog","tab-allsku"].forEach(function(id){
       var p=q(id); if(p) p.style.display="none";
     });
     var me=q(PANEL_ID); if(me) me.style.display="block";
@@ -3504,6 +3558,183 @@ if(_isXlsx){
     });
     ["caRsnTable","caEvTable","caDetTable"].forEach(wireDomSort);
     ["caMin"].forEach(function(id){ var e=q(id); if(e) e.addEventListener("keydown", function(ev){ if(ev.key==="Enter"){ if(compute()) render(); } }); });
+  }
+
+  if(document.readyState==="loading") document.addEventListener("DOMContentLoaded", wire);
+  else wire();
+})();
+</script>
+
+
+<script>
+/* ===== 全部貨品（非 1P） ===== */
+(function(){
+  "use strict";
+  var PANEL_ID = "tab-allsku", TAB_NAME = "allsku";
+  var CELLS = [], VIEW = [];
+  var sortIdx = 6, sortDir = -1;          /* 預設按取消率降序 */
+
+  function q(id){ return document.getElementById(id); }
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];}); }
+  function num(v){ var n=parseFloat(String(v==null?"":v).replace(/[^0-9.\-]/g,"")); return isNaN(n)?0:n; }
+  function allRows(){
+    try{ if(typeof ROWS!=="undefined" && ROWS && ROWS.length) return ROWS; }catch(e){}
+    return (window.ROWS||[]);
+  }
+  function is1P(r){
+    try{ return !!(window.is1P && (window.is1P(r.merchant) || window.is1P(r.store_name))); }catch(e){ return false; }
+  }
+
+  /* 同 Invisible List 一樣嘅計法，淨係去咗兩層白名單 */
+  function build(){
+    var rows = allRows(), m = {};
+    for(var i=0;i<rows.length;i++){
+      var r = rows[i];
+      var st = String(r.status||"").replace(/[_\-]+/g," ").trim().toLowerCase();
+      if(st === "fully cancelled" || st === "fully canceled") continue;
+      try{ if(window.__EXCL_REASON && window.__EXCL_REASON(r.cancel_type, r.cs_reason, r.rr_reason)) continue; }catch(e){}
+      if(is1P(r)) continue;                                   /* 只除 1P */
+      var sku = r.sku_id, wm = r.store_name;                  /* 注意：源檔 Store_Name 先係街市名 */
+      if(!sku || !wm) continue;
+      var k = sku + "||" + wm;
+      var o = m[k] || (m[k] = {wet_market:wm, store_name:"", sku_id:sku, sku_name:r.sku_name||"", sold:0, cancel:0});
+      var storeNm = r.merchant || "";
+      if(storeNm && o.store_name.indexOf(storeNm) === -1) o.store_name = (o.store_name ? o.store_name + ", " : "") + storeNm;
+      o.sold += num(r.sold);
+      var noCount = false;
+      try{ noCount = !!(window.__NO_CANCEL_COUNT && window.__NO_CANCEL_COUNT(r.cancel_type, r.cs_reason, r.rr_reason)); }catch(e){}
+      if(!noCount) o.cancel += num(r.refund);
+    }
+    CELLS = Object.keys(m).map(function(k){
+      var o = m[k]; o.rate = o.sold > 0 ? (o.cancel/o.sold*100) : 0; return o;
+    });
+    /* 街市選單 */
+    var sel = q("asMarket");
+    if(sel){
+      var names = {}; CELLS.forEach(function(o){ if(o.wet_market) names[o.wet_market] = 1; });
+      var keys = Object.keys(names).sort(function(a,b){ return String(a).localeCompare(String(b)); });
+      var sig = keys.join("|");
+      if(sel.getAttribute("data-sig") !== sig){
+        sel.setAttribute("data-sig", sig);
+        var cur = sel.value;
+        sel.innerHTML = '<option value="">全部街市</option>' + keys.map(function(k){ return '<option>' + esc(k) + '</option>'; }).join("");
+        if(cur) sel.value = cur;
+      }
+    }
+  }
+
+  function render(){
+    if(!CELLS.length) build();
+    var rateTh = num(q("asRateTh").value), soldTh = num(q("asSoldTh").value);
+    var mk = q("asMarket").value, kw = String(q("asStore").value||"").trim();
+    var lim = Math.max(1, parseInt(q("asLimit").value||"500", 10) || 500);
+    VIEW = CELLS.filter(function(o){
+      if(o.rate <= rateTh || o.sold <= soldTh) return false;
+      if(mk && o.wet_market !== mk) return false;
+      if(kw && o.store_name.indexOf(kw) === -1) return false;
+      return true;
+    });
+    var keys = ["wet_market","store_name","sku_id","sku_name","sold","cancel","rate"];
+    var k = keys[sortIdx];
+    VIEW.sort(function(x,y){
+      var a = x[k], b = y[k];
+      if(typeof a === "string") return sortDir * String(a).localeCompare(String(b));
+      return sortDir * ((a||0)-(b||0));
+    });
+
+    var sold=0, canc=0;
+    CELLS.forEach(function(o){ sold += o.sold; canc += o.cancel; });
+    q("asCells").textContent  = CELLS.length.toLocaleString();
+    q("asHit").textContent    = VIEW.length.toLocaleString();
+    q("asSold").textContent   = Math.round(sold).toLocaleString();
+    q("asCancel").textContent = Math.round(canc).toLocaleString();
+    q("asRate").textContent   = sold ? (canc/sold*100).toFixed(2) + "%" : "-";
+
+    var shown = VIEW.slice(0, lim);
+    q("asNote").innerHTML =
+      "覆蓋全部非 1P 檔口，冇 Invisible List 嗰兩層白名單（120 個檔口 / 116 個 SKU 前綴）。" +
+      "計數規則同 Invisible List 一致，所以兩頁數字可比。" +
+      "預設「出售量 &gt; 10」而唔係 Invisible List 嘅 100 —— 3P 檔口單一 SKU 銷量細，" +
+      "用 100 做門檻成頁得幾行。<br>" +
+      "符合條件 " + VIEW.length.toLocaleString() + " 個 (SKU × 街市)" +
+      (VIEW.length > shown.length ? "，只顯示頭 " + shown.length.toLocaleString() + " 個（改「顯示上限」睇更多，匯出 CSV 會有全部）" : "") +
+      "。<span class=\"muted\">此頁唔包 CMS「顯示於Customer App」狀態同排程按鈕 —— 嗰啲仍然喺 Invisible List。</span>";
+
+    var b = q("asBody");
+    b.innerHTML = shown.length ? shown.map(function(o){
+      var hot = o.rate >= 10 ? ' style="color:#f88;font-weight:600"' : (o.rate >= 5 ? ' style="color:#fc8"' : '');
+      return '<tr><td style="text-align:left">' + esc(o.wet_market) + '</td>' +
+        '<td style="text-align:left">' + esc(o.store_name) + '</td>' +
+        '<td style="text-align:left">' + esc(o.sku_id) + '</td>' +
+        '<td style="text-align:left">' + esc(String(o.sku_name).slice(0,42)) + '</td>' +
+        '<td>' + Math.round(o.sold).toLocaleString() + '</td>' +
+        '<td>' + Math.round(o.cancel).toLocaleString() + '</td>' +
+        '<td' + hot + '>' + o.rate.toFixed(2) + '</td></tr>';
+    }).join("") : '<tr><td colspan="7" class="muted">冇符合條件嘅貨品（試調低門檻）</td></tr>';
+
+    paint();
+  }
+
+  function paint(){
+    var tbl = q("asTable"); if(!tbl || !tbl.tHead) return;
+    Array.prototype.forEach.call(tbl.tHead.rows[0].cells, function(th, i){
+      var a = th.querySelector(".caArw");
+      if(!a){ a = document.createElement("span"); a.className = "caArw"; th.appendChild(a); }
+      var on = (i === sortIdx);
+      th.classList.toggle("caOn", on);
+      a.textContent = on ? (sortDir < 0 ? "▼" : "▲") : "⇅";
+    });
+  }
+
+  function exportCsv(){
+    if(!VIEW.length){ alert("冇資料可匯出。"); return; }
+    var out = [["街市","店舖","sku_id","sku_name","出售量","取消/退款量","取消率%"]];
+    VIEW.forEach(function(o){ out.push([o.wet_market, o.store_name, o.sku_id, o.sku_name,
+      Math.round(o.sold), Math.round(o.cancel), o.rate.toFixed(2)]); });
+    var csv = "\ufeff" + out.map(function(r){
+      return r.map(function(c){ var v=String(c==null?"":c); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }).join(",");
+    }).join("\r\n");
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], {type:"text/csv;charset=utf-8"}));
+    a.download = "all_sku_non1p.csv";
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  function switchTo(){
+    document.querySelectorAll(".tab").forEach(function(t){ t.classList.toggle("on", t.dataset.tab===TAB_NAME); });
+    ["tab-main","tab-yday","tab-detail","tab-invisible","tab-badcmt","tab-ivtask","tab-ivlog","tab-cancattr"].forEach(function(id){
+      var p=q(id); if(p) p.style.display="none";
+    });
+    var me=q(PANEL_ID); if(me) me.style.display="block";
+    CELLS = [];                 /* 主報表可能換咗資料，重新計 */
+    render();
+  }
+
+  function wire(){
+    var t = document.querySelector('.tab[data-tab="' + TAB_NAME + '"]');
+    if(!t){ setTimeout(wire, 300); return; }
+    t.addEventListener("click", switchTo);
+    document.querySelectorAll(".tab").forEach(function(el){
+      if(el.dataset.tab !== TAB_NAME){
+        el.addEventListener("click", function(){ var p=q(PANEL_ID); if(p) p.style.display="none"; });
+      }
+    });
+    var ap=q("asApply"); if(ap) ap.addEventListener("click", render);
+    var ex=q("asExp"); if(ex) ex.addEventListener("click", exportCsv);
+    var mk=q("asMarket"); if(mk) mk.addEventListener("change", render);
+    ["asRateTh","asSoldTh","asStore","asLimit"].forEach(function(id){
+      var e=q(id); if(e) e.addEventListener("keydown", function(ev){ if(ev.key==="Enter") render(); });
+    });
+    var tbl = q("asTable");
+    if(tbl && tbl.tHead){
+      Array.prototype.forEach.call(tbl.tHead.rows[0].cells, function(th, i){
+        th.style.cursor = "pointer";
+        th.addEventListener("click", function(){
+          if(sortIdx === i) sortDir = -sortDir; else { sortIdx = i; sortDir = -1; }
+          render();
+        });
+      });
+    }
   }
 
   if(document.readyState==="loading") document.addEventListener("DOMContentLoaded", wire);
