@@ -138,59 +138,6 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
          嚴格模式：當日出貨涉多過一個供應商，該 (SKU × 收貨日) 分子分母一齊剔。
          只覆蓋經 TY8F 倉嘅 1P（叮叮菓菜 / DINGDONG FRESH）；3P 街市檔冇 PO。 -->
 
-    <!-- ===================================================================
-         全部貨品（非 1P） — 2026-08-28
-         同 Invisible List 一樣嘅計法，但除去佢嘅兩層白名單：
-           __IV_STORE_WL      120 個指定檔口
-           __IV_SKU_ALLOWED   116 個 SKU 前綴
-         只保留「排除 1P」。實測白名單只覆蓋非 1P 貨品 37.5% 嘅 SKU，
-         呢一頁覆蓋全部 16,787 個。
-         計數規則同 Invisible List 一致（Fully Cancelled 不計、__EXCL_REASON
-         排除、__NO_CANCEL_COUNT 決定退款算唔算商戶頭上），所以兩頁可比。
-         =================================================================== -->
-    <div id="tab-allsku" style="display:none">
-      <div class="cards">
-        <div class="kpi"><div class="lab">SKU × 街市</div><div class="val" id="asCells">-</div></div>
-        <div class="kpi"><div class="lab">符合條件</div><div class="val" id="asHit">-</div></div>
-        <div class="kpi"><div class="lab">總出售量</div><div class="val" id="asSold">-</div></div>
-        <div class="kpi"><div class="lab">總取消/退款量</div><div class="val" id="asCancel">-</div></div>
-        <div class="kpi"><div class="lab">整體取消率</div><div class="val red" id="asRate">-</div></div>
-      </div>
-
-      <div class="card">
-        <h2>篩選</h2>
-        <div class="muted">
-          取消率 &gt; <input type="text" id="asRateTh" value="1" style="width:60px;display:inline-block"> %
-          　出售量 &gt; <input type="text" id="asSoldTh" value="10" style="width:70px;display:inline-block">
-          　街市 <select id="asMarket" style="width:170px;display:inline-block"><option value="">全部街市</option></select>
-          　店舖 <input type="text" id="asStore" placeholder="店舖名關鍵字" style="width:150px;display:inline-block">
-          　顯示上限 <input type="text" id="asLimit" value="500" style="width:60px;display:inline-block">
-          　<label class="chk" style="display:inline-block"><input type="checkbox" id="asSeafood"> 包括海鮮（魚／海鮮檔）</label>
-          <button class="btn sec" id="asApply">套用</button>
-          <button class="btn ghost" id="asExp">匯出 CSV</button>
-        </div>
-        <div class="muted" id="asNote" style="margin-top:8px"></div>
-      </div>
-
-      <div class="card">
-        <h2>貨品取消率（全部非 1P 檔口）</h2>
-        <div class="scroll" style="max-height:70vh">
-          <table class="thin" id="asTable">
-            <thead><tr>
-              <th style="text-align:left">街市 Wet Market</th>
-              <th style="text-align:left">店舖 Store</th>
-              <th style="text-align:left">SKU ID</th>
-              <th style="text-align:left">SKU 名稱</th>
-              <th>出售量</th>
-              <th>取消/退款量</th>
-              <th>取消率 %</th>
-            </tr></thead>
-            <tbody id="asBody"><tr><td colspan="7" class="muted">未載入</td></tr></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
     <div id="tab-cancattr" style="display:none">
       <div class="cards">
         <div class="kpi"><div class="lab">已歸因訂單行</div><div class="val" id="caLines">-</div></div>
@@ -429,12 +376,14 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
     </div>
 <div id="tab-invisible" style="display:none">
       <div class="card">
-        <h2>Invisible List（按 SKU × 街市）</h2>
+        <h2 id="ivTitle">Invisible List（按 SKU × 街市）</h2>
+        <div class="muted" id="ivScopeNote" style="margin-bottom:8px"></div>
         <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px">
           <div><label>取消率 &gt; (%)</label><input type="text" id="ivRate" value="1" style="width:80px"></div>
           <div><label>出售量 &gt; </label><input type="text" id="ivSold" value="100" style="width:80px"></div>
           <div><label>街市 Wet Market</label><select id="ivMarket" style="width:180px"><option value="">全部街市</option></select></div><div><label>店舖 Store</label><select id="ivStore" style="width:200px"><option value="">全部店舖</option></select></div><div><label>排序 Sort</label><select id="ivSortMode" style="width:190px"><option value="rate">取消率</option><option value="market">街市 → 取消率</option></select></div>
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--mut)"><input type="checkbox" id="ivGroupStore">按街市 / 店舖分組</label>
+          <label id="ivSeafoodWrap" style="display:none;align-items:center;gap:6px;font-size:12px;color:var(--mut)"><input type="checkbox" id="ivSeafood">包括海鮮（魚／海鮮檔）</label>
           <button class="btn sec" id="ivApply" style="width:auto;padding:6px 14px">套用</button>
           <button class="btn ghost" id="ivExp" style="width:auto;padding:6px 14px">匯出 Invisible List CSV（匯總表）</button><button class="btn ghost" id="ivExpRaw" style="width:auto;padding:6px 14px">匯出取消 Order Entry 原始資料 CSV</button><label style="font-size:12px;color:var(--mut);display:inline-flex;align-items:center;gap:4px"><input type="checkbox" id="ivExpOnlyTable" checked>只限表內 SKU</label><button class="btn sec" id="ivFetchStatus" style="width:auto;padding:6px 14px">查詢狀態</button><button class="btn" id="ivSetInvisible" style="width:auto;padding:6px 14px">設為Invisible (已選)</button><button class="btn ghost" id="ivCancelSched" style="width:auto;padding:6px 14px">取消排程 (已選)</button>
         </div>
@@ -972,6 +921,23 @@ if(_isXlsx){
   // 隱形清單：只包含以下 SKU 代碼開頭的貨品（門店白名單 __IV_STORE_WL 保留備用，現時不生效）
   window.__IV_SKU_ALLOW_PREFIX=["65019","65022","63744","69435","63771","63417","63750","63684","68167","68176","68128","72622","68125","67825","68140","68182","63705","68143","71431","64038","64011","64005","71326","71338","71335","71341","64029","71878","64158","64077","66846","71413","69387","64125","66413","64104","67679","80882","76960","64017","64101","66960","69249","69246","64272","64377","64929","64293","64470","64536","64317","64542","67559","79568","64203","64245","71323","80420","64257","64242","64239","64215","77086","67344","67341","64227","69120","70912","71308","71302","70915","72616","72640","80408","70900","70903","70906","80870","70918","70948","63477","71875","72562","69321","63528","63480","63513","63483","63564","63546","63534","63507","71422","69402","66154","63726","64389","64314","65635","67314","69093","68272","71419","80387","64434","64275","65397","64296","63399","73342","64386","78712","72559","68505","82033","80369"];
   window.__IV_SKU_ALLOW_SET=(function(){ var o={}; for(var i=0;i<window.__IV_SKU_ALLOW_PREFIX.length;i++){ o[window.__IV_SKU_ALLOW_PREFIX[i]]=1; } return o; })();
+  /* ── 範圍切換 ──────────────────────────────────────────────
+     "wl"  = Invisible List：120 個檔口 + 116 個 SKU 前綴白名單
+     "all" = 全部貨品（非 1P）：所有非 1P 檔口，剔除海鮮（港灣海產除外）
+     兩個分頁共用同一個 module、同一個 panel、同一套按鈕同任務表，
+     所以「設定隱藏 / 排程 / CMS 狀態」喺闊範圍一樣用得。 */
+  window.__IV_SCOPE = "wl";
+  window.__IV_SEAFOOD_CAT = {"魚":1, "海鮮":1};
+  window.__IV_SEAFOOD_NAME = /海鮮|海產|鮮魚|淡水魚|冰鮮魚|魚檔|魚枱/;
+  window.__IV_SEAFOOD_KEEP = /港灣海產/;
+  /* 海鮮要兩條規則一齊用：海鮮檔亦會賣「直播貨品」「新鮮丸/滑/魚皮」「組合/套餐」，
+     呢啲品類名唔含海鮮字。名稱規則實測捉到 51 個檔口，逐個核過全部係海鮮生意。 */
+  window.__IV_IS_SEAFOOD=function(store, cat){
+    var m = String(store||"");
+    if(window.__IV_SEAFOOD_KEEP.test(m)) return false;
+    if(window.__IV_SEAFOOD_CAT[String(cat||"").trim()]) return true;
+    return window.__IV_SEAFOOD_NAME.test(m);
+  };
   window.__IV_SKU_ALLOWED=function(sku){ var s=String(sku==null?"":sku).trim(); if(!s) return false; if(window.__IV_SKU_ALLOW_SET[s.split("_")[0]]) return true; if(window.__IV_SKU_ALLOW_SET[s.slice(0,5)]) return true; return false; };
   function q(id){ return document.getElementById(id); }
   function num(v){ var n=parseFloat(String(v==null?"":v).replace(/[^0-9.\-]/g,"")); return isNaN(n)?0:n; }
@@ -982,7 +948,11 @@ if(_isXlsx){
     if(!CSV_ROWS) return [];
     var m={};
     for(var i=0;i<CSV_ROWS.length;i++){
-      var row=CSV_ROWS[i]; var sku=row["sku_id"], wm=row["Store_Name"]; if(window.__IS_FULLY_CANCELLED&&window.__IS_FULLY_CANCELLED(row))continue; if(window.__EXCL_REASON&&window.__EXCL_REASON(row["sku_cancel_reason"],row["sku_cs_refund_reason"],row["REFUND_REPORT_CANCEL_reason"]))continue; var _store=(row["Wet_Market"]||row["merchant_name"]||wm); if(window.only3P && window.only3P() && window.is1P && window.is1P(_store)) continue; if(window.__IV_SKU_ALLOWED && !window.__IV_SKU_ALLOWED(sku)) continue;
+      var row=CSV_ROWS[i]; var sku=row["sku_id"], wm=row["Store_Name"]; if(window.__IS_FULLY_CANCELLED&&window.__IS_FULLY_CANCELLED(row))continue; if(window.__EXCL_REASON&&window.__EXCL_REASON(row["sku_cancel_reason"],row["sku_cs_refund_reason"],row["REFUND_REPORT_CANCEL_reason"]))continue; var _store=(row["Wet_Market"]||row["merchant_name"]||wm); if(window.only3P && window.only3P() && window.is1P && window.is1P(_store)) continue; if(window.__IV_SCOPE!=="all" && window.__IV_SKU_ALLOWED && !window.__IV_SKU_ALLOWED(sku)) continue;
+      if(window.__IV_SCOPE==="all"){
+        var _incSf=q("ivSeafood");
+        if(!(_incSf&&_incSf.checked) && window.__IV_IS_SEAFOOD && window.__IV_IS_SEAFOOD(_store, row["sub_cat1_name_zh"])) continue;
+      }
       if(!sku||!wm) continue;
       var k=sku+"||"+wm;
       if(!m[k]) m[k]={sku_id:sku, sku_name:row["sku_name_chi"]||"", wet_market:wm, sold:0, cancel:0};
@@ -1105,16 +1075,37 @@ if(_isXlsx){
     var blob=new Blob([String.fromCharCode(0xFEFF)+csv],{type:"text/csv;charset=utf-8;"});
     var a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="invisible_list.csv"; document.body.appendChild(a); a.click(); a.remove();
   }
-  function switchToInvisible(){
-    document.querySelectorAll(".tab").forEach(function(el){ el.classList.toggle("on", el.dataset.tab==="invisible"); });
-    ["main","detail","invisible"].forEach(function(name){ var p=q("tab-"+name); if(p) p.style.display=(name==="invisible")?"block":"none"; });
+  function switchToInvisible(scope){
+    var sc = (scope==="all") ? "all" : "wl";
+    window.__IV_SCOPE = sc;
+    var activeTab = (sc==="all") ? "allsku" : "invisible";
+    document.querySelectorAll(".tab").forEach(function(el){ el.classList.toggle("on", el.dataset.tab===activeTab); });
+    ["main","detail","invisible","yday","badcmt","cancattr","ivtask","ivlog","allsku"].forEach(function(name){
+      var p=q("tab-"+name); if(p) p.style.display=(name==="invisible")?"block":"none";
+    });
+    var ttl=q("ivTitle"), note=q("ivScopeNote"), sfw=q("ivSeafoodWrap");
+    if(ttl) ttl.textContent = (sc==="all") ? "全部貨品（非 1P）（按 SKU × 街市）" : "Invisible List（按 SKU × 街市）";
+    if(sfw) sfw.style.display = (sc==="all") ? "inline-flex" : "none";
+    if(note) note.innerHTML = (sc==="all")
+      ? "範圍：<b>所有非 1P 檔口</b>，冇 Invisible List 嗰兩層白名單（120 個檔口 / 116 個 SKU 前綴）。" +
+        "已剔除海鮮檔（子品類「魚」「海鮮」＋檔口名），但<b>保留港灣海產</b>。" +
+        "功能同 Invisible List 完全一樣（CMS 狀態、設定隱藏、排程、匯出）。" +
+        "<span style=\"color:#fc8\">留意：3P 檔口單一 SKU 銷量細，「出售量 &gt; 100」可能得幾行，可調低。</span>"
+      : "範圍：<b>白名單內 120 個檔口 / 116 個 SKU 前綴</b>（非 1P）。想睇全部貨品請轉去「全部貨品（非 1P）」分頁。";
     render();
   }
   function wireTabs(){
     var invTab=document.querySelector(".tab[data-tab=\"invisible\"]");
     if(!invTab){ setTimeout(wireTabs,300); return; }
-    invTab.addEventListener("click", switchToInvisible);
-    document.querySelectorAll(".tab").forEach(function(el){ if(el.dataset.tab!=="invisible"){ el.addEventListener("click", function(){ var p=q("tab-invisible"); if(p) p.style.display="none"; }); } });
+    invTab.addEventListener("click", function(){ switchToInvisible("wl"); });
+    var allTab=document.querySelector('.tab[data-tab="allsku"]');
+    if(allTab) allTab.addEventListener("click", function(){ switchToInvisible("all"); });
+    document.querySelectorAll(".tab").forEach(function(el){
+      if(el.dataset.tab!=="invisible" && el.dataset.tab!=="allsku"){
+        el.addEventListener("click", function(){ var p=q("tab-invisible"); if(p) p.style.display="none"; });
+      }
+    });
+    var sfc=q("ivSeafood"); if(sfc) sfc.addEventListener("change", render);
     var ap=q("ivApply"); if(ap) ap.addEventListener("click", render);
     var ex=q("ivExp"); if(ex) ex.addEventListener("click", exportCsv); var exr=q("ivExpRaw"); if(exr) exr.addEventListener("click", function(){ exportRawCsv(); });
       var _ivb=q("ivBody"); if(_ivb){ _ivb.addEventListener("click", function(ev){ var t=ev.target; if(t && t.className && String(t.className).indexOf("ivRawOne")>=0){ ev.preventDefault(); ev.stopPropagation(); exportRawCsv({sku:t.getAttribute("data-sku"), wm:t.getAttribute("data-wm")}); } }); }
@@ -3586,203 +3577,7 @@ if(_isXlsx){
 </script>
 
 
-<script>
-/* ===== 全部貨品（非 1P） ===== */
-(function(){
-  "use strict";
-  var PANEL_ID = "tab-allsku", TAB_NAME = "allsku";
-  var CELLS = [], VIEW = [];
-  var sortIdx = 6, sortDir = -1;          /* 預設按取消率降序 */
 
-  function q(id){ return document.getElementById(id); }
-  function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];}); }
-  function num(v){ var n=parseFloat(String(v==null?"":v).replace(/[^0-9.\-]/g,"")); return isNaN(n)?0:n; }
-  function allRows(){
-    try{ if(typeof ROWS!=="undefined" && ROWS && ROWS.length) return ROWS; }catch(e){}
-    return (window.ROWS||[]);
-  }
-  function is1P(r){
-    try{ return !!(window.is1P && (window.is1P(r.merchant) || window.is1P(r.store_name))); }catch(e){ return false; }
-  }
-  /* 海鮮：兩條規則一齊用，因為單靠子品類會漏。
-     (1) 子品類「魚」8,650 行 /「海鮮」8,212 行；
-     (2) 檔口名 —— 海鮮檔亦會賣「直播貨品」「新鮮丸/滑/魚皮」「組合/套餐」，
-         呢啲品類名唔含海鮮字但貨品係海鮮。實測名稱規則捉到 51 個檔口，
-         逐個核過全部確實係海鮮生意，冇誤殺（例：(直播) 星華海鮮、好好傾鮮魚）。
-     港灣海產例外保留 —— 佢係該兩品類最大賣家（6,348 行，第二位檔口只 1,281），
-     名字冇街市後綴，屬中央營運而唔係街市檔口。 */
-  var SEAFOOD_CAT = {"魚":1, "海鮮":1};
-  var SEAFOOD_NAME = /海鮮|海產|鮮魚|淡水魚|冰鮮魚|魚檔|魚枱/;
-  var SEAFOOD_KEEP = /港灣海產/;
-  function isSeafoodStall(r){
-    var m = String(r.merchant||"");
-    if(SEAFOOD_KEEP.test(m)) return false;
-    if(SEAFOOD_CAT[String(r.type2||"").trim()]) return true;
-    return SEAFOOD_NAME.test(m);
-  }
-
-  /* 同 Invisible List 一樣嘅計法，淨係去咗兩層白名單 */
-  function build(){
-    var rows = allRows(), m = {};
-    var inclSeafood = !!(q("asSeafood") && q("asSeafood").checked);
-    for(var i=0;i<rows.length;i++){
-      var r = rows[i];
-      var st = String(r.status||"").replace(/[_\-]+/g," ").trim().toLowerCase();
-      if(st === "fully cancelled" || st === "fully canceled") continue;
-      try{ if(window.__EXCL_REASON && window.__EXCL_REASON(r.cancel_type, r.cs_reason, r.rr_reason)) continue; }catch(e){}
-      if(is1P(r)) continue;                                   /* 除 1P */
-      if(!inclSeafood && isSeafoodStall(r)) continue;          /* 除海鮮檔（港灣海產除外）*/
-      var sku = r.sku_id, wm = r.store_name;                  /* 注意：源檔 Store_Name 先係街市名 */
-      if(!sku || !wm) continue;
-      var k = sku + "||" + wm;
-      var o = m[k] || (m[k] = {wet_market:wm, store_name:"", sku_id:sku, sku_name:r.sku_name||"", sold:0, cancel:0});
-      var storeNm = r.merchant || "";
-      if(storeNm && o.store_name.indexOf(storeNm) === -1) o.store_name = (o.store_name ? o.store_name + ", " : "") + storeNm;
-      o.sold += num(r.sold);
-      var noCount = false;
-      try{ noCount = !!(window.__NO_CANCEL_COUNT && window.__NO_CANCEL_COUNT(r.cancel_type, r.cs_reason, r.rr_reason)); }catch(e){}
-      if(!noCount) o.cancel += num(r.refund);
-    }
-    CELLS = Object.keys(m).map(function(k){
-      var o = m[k]; o.rate = o.sold > 0 ? (o.cancel/o.sold*100) : 0; return o;
-    });
-    /* 街市選單 */
-    var sel = q("asMarket");
-    if(sel){
-      var names = {}; CELLS.forEach(function(o){ if(o.wet_market) names[o.wet_market] = 1; });
-      var keys = Object.keys(names).sort(function(a,b){ return String(a).localeCompare(String(b)); });
-      var sig = keys.join("|");
-      if(sel.getAttribute("data-sig") !== sig){
-        sel.setAttribute("data-sig", sig);
-        var cur = sel.value;
-        sel.innerHTML = '<option value="">全部街市</option>' + keys.map(function(k){ return '<option>' + esc(k) + '</option>'; }).join("");
-        if(cur) sel.value = cur;
-      }
-    }
-  }
-
-  function render(){
-    if(!CELLS.length) build();
-    var rateTh = num(q("asRateTh").value), soldTh = num(q("asSoldTh").value);
-    var mk = q("asMarket").value, kw = String(q("asStore").value||"").trim();
-    var lim = Math.max(1, parseInt(q("asLimit").value||"500", 10) || 500);
-    VIEW = CELLS.filter(function(o){
-      if(o.rate <= rateTh || o.sold <= soldTh) return false;
-      if(mk && o.wet_market !== mk) return false;
-      if(kw && o.store_name.indexOf(kw) === -1) return false;
-      return true;
-    });
-    var keys = ["wet_market","store_name","sku_id","sku_name","sold","cancel","rate"];
-    var k = keys[sortIdx];
-    VIEW.sort(function(x,y){
-      var a = x[k], b = y[k];
-      if(typeof a === "string") return sortDir * String(a).localeCompare(String(b));
-      return sortDir * ((a||0)-(b||0));
-    });
-
-    var sold=0, canc=0;
-    CELLS.forEach(function(o){ sold += o.sold; canc += o.cancel; });
-    q("asCells").textContent  = CELLS.length.toLocaleString();
-    q("asHit").textContent    = VIEW.length.toLocaleString();
-    q("asSold").textContent   = Math.round(sold).toLocaleString();
-    q("asCancel").textContent = Math.round(canc).toLocaleString();
-    q("asRate").textContent   = sold ? (canc/sold*100).toFixed(2) + "%" : "-";
-
-    var shown = VIEW.slice(0, lim);
-    q("asNote").innerHTML =
-      "覆蓋全部非 1P 檔口，冇 Invisible List 嗰兩層白名單（120 個檔口 / 116 個 SKU 前綴）。" +
-      "計數規則同 Invisible List 一致，所以兩頁數字可比。" +
-      (q("asSeafood") && q("asSeafood").checked
-        ? "<b>現時包括海鮮檔。</b>"
-        : "已剔除海鮮檔（子品類「魚」「海鮮」），但<b>保留港灣海產</b> —— 佢係該兩品類最大賣家、屬中央營運。") +
-      "預設「出售量 &gt; 10」而唔係 Invisible List 嘅 100 —— 3P 檔口單一 SKU 銷量細，" +
-      "用 100 做門檻成頁得幾行。<br>" +
-      "符合條件 " + VIEW.length.toLocaleString() + " 個 (SKU × 街市)" +
-      (VIEW.length > shown.length ? "，只顯示頭 " + shown.length.toLocaleString() + " 個（改「顯示上限」睇更多，匯出 CSV 會有全部）" : "") +
-      "。<span class=\"muted\">此頁唔包 CMS「顯示於Customer App」狀態同排程按鈕 —— 嗰啲仍然喺 Invisible List。</span>";
-
-    var b = q("asBody");
-    b.innerHTML = shown.length ? shown.map(function(o){
-      var hot = o.rate >= 10 ? ' style="color:#f88;font-weight:600"' : (o.rate >= 5 ? ' style="color:#fc8"' : '');
-      return '<tr><td style="text-align:left">' + esc(o.wet_market) + '</td>' +
-        '<td style="text-align:left">' + esc(o.store_name) + '</td>' +
-        '<td style="text-align:left">' + esc(o.sku_id) + '</td>' +
-        '<td style="text-align:left">' + esc(String(o.sku_name).slice(0,42)) + '</td>' +
-        '<td>' + Math.round(o.sold).toLocaleString() + '</td>' +
-        '<td>' + Math.round(o.cancel).toLocaleString() + '</td>' +
-        '<td' + hot + '>' + o.rate.toFixed(2) + '</td></tr>';
-    }).join("") : '<tr><td colspan="7" class="muted">冇符合條件嘅貨品（試調低門檻）</td></tr>';
-
-    paint();
-  }
-
-  function paint(){
-    var tbl = q("asTable"); if(!tbl || !tbl.tHead) return;
-    Array.prototype.forEach.call(tbl.tHead.rows[0].cells, function(th, i){
-      var a = th.querySelector(".caArw");
-      if(!a){ a = document.createElement("span"); a.className = "caArw"; th.appendChild(a); }
-      var on = (i === sortIdx);
-      th.classList.toggle("caOn", on);
-      a.textContent = on ? (sortDir < 0 ? "▼" : "▲") : "⇅";
-    });
-  }
-
-  function exportCsv(){
-    if(!VIEW.length){ alert("冇資料可匯出。"); return; }
-    var out = [["街市","店舖","sku_id","sku_name","出售量","取消/退款量","取消率%"]];
-    VIEW.forEach(function(o){ out.push([o.wet_market, o.store_name, o.sku_id, o.sku_name,
-      Math.round(o.sold), Math.round(o.cancel), o.rate.toFixed(2)]); });
-    var csv = "\ufeff" + out.map(function(r){
-      return r.map(function(c){ var v=String(c==null?"":c); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }).join(",");
-    }).join("\r\n");
-    var a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([csv], {type:"text/csv;charset=utf-8"}));
-    a.download = "all_sku_non1p.csv";
-    document.body.appendChild(a); a.click(); a.remove();
-  }
-
-  function switchTo(){
-    document.querySelectorAll(".tab").forEach(function(t){ t.classList.toggle("on", t.dataset.tab===TAB_NAME); });
-    ["tab-main","tab-yday","tab-detail","tab-invisible","tab-badcmt","tab-ivtask","tab-ivlog","tab-cancattr"].forEach(function(id){
-      var p=q(id); if(p) p.style.display="none";
-    });
-    var me=q(PANEL_ID); if(me) me.style.display="block";
-    CELLS = [];                 /* 主報表可能換咗資料，重新計 */
-    render();
-  }
-
-  function wire(){
-    var t = document.querySelector('.tab[data-tab="' + TAB_NAME + '"]');
-    if(!t){ setTimeout(wire, 300); return; }
-    t.addEventListener("click", switchTo);
-    document.querySelectorAll(".tab").forEach(function(el){
-      if(el.dataset.tab !== TAB_NAME){
-        el.addEventListener("click", function(){ var p=q(PANEL_ID); if(p) p.style.display="none"; });
-      }
-    });
-    var ap=q("asApply"); if(ap) ap.addEventListener("click", render);
-    var ex=q("asExp"); if(ex) ex.addEventListener("click", exportCsv);
-    var mk=q("asMarket"); if(mk) mk.addEventListener("change", render);
-    var sf=q("asSeafood"); if(sf) sf.addEventListener("change", function(){ CELLS = []; render(); });
-    ["asRateTh","asSoldTh","asStore","asLimit"].forEach(function(id){
-      var e=q(id); if(e) e.addEventListener("keydown", function(ev){ if(ev.key==="Enter") render(); });
-    });
-    var tbl = q("asTable");
-    if(tbl && tbl.tHead){
-      Array.prototype.forEach.call(tbl.tHead.rows[0].cells, function(th, i){
-        th.style.cursor = "pointer";
-        th.addEventListener("click", function(){
-          if(sortIdx === i) sortDir = -sortDir; else { sortIdx = i; sortDir = -1; }
-          render();
-        });
-      });
-    }
-  }
-
-  if(document.readyState==="loading") document.addEventListener("DOMContentLoaded", wire);
-  else wire();
-})();
-</script>
 
 </body>
 </html>
