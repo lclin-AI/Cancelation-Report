@@ -3602,7 +3602,7 @@ if(_isXlsx){
    raw.githack 同 GitHub 都係即時 serve 最新檔（實測 X-Cache: MISS、
    cf-cache-status: BYPASS），所以「見到舊版」一律係瀏覽器 cache。
    之前冇任何方法喺頁面上分辨載入咗邊個版本，所以加咗呢個。 */
-window.__BUILD = "2026-08-28 18:50";
+window.__BUILD = "2026-08-28 19:10";
 (function(){
   var RAW = "https://raw.githubusercontent.com/lclin-AI/Cancelation-Report/main/index-new.html";
   function stamp(){
@@ -3647,19 +3647,21 @@ window.__BUILD = "2026-08-28 18:50";
   }
   async function check(d){
     try{
-      var latest = sessionStorage.getItem("caBuildLatest");
-      if(!latest){
-        latest = await remoteBuild();
-        if(latest) try{ sessionStorage.setItem("caBuildLatest", latest); }catch(e){}
-      }
+      /* 唔可以 cache 參照：sessionStorage 唔會因為 Ctrl+Shift+R 而清，
+         一旦存咗個舊值就會一直誤報，reload 幾多次都冇用。 */
+      try{ sessionStorage.removeItem("caBuildLatest"); }catch(e){}
+      var latest = await remoteBuild();
       if(!latest) return;                             /* 讀唔到就唔亂報 */
-      if(latest === window.__BUILD){
-        d.innerHTML = "版本 " + window.__BUILD + " ✓ 最新";
+      /* 只有參照【新過】自己先算舊版。BUILD 係 "YYYY-MM-DD HH:MM"，字串比較就啱。
+         啱啱 push 完 CDN 一定落後，嗰陣參照會舊過自己 —— 嗰個唔係問題。 */
+      if(latest > window.__BUILD){
+        d.innerHTML = '<span style="color:#f88;font-weight:600">⚠ 你載入嘅係舊版 ' +
+          window.__BUILD + '，最新係 ' + latest +
+          '。請按 Ctrl+Shift+R 強制重載（或喺網址後面加 ?v=' + Date.now().toString().slice(-6) + '）。</span>';
         return;
       }
-      d.innerHTML = '<span style="color:#f88;font-weight:600">⚠ 你載入嘅係舊版 ' +
-        window.__BUILD + '，最新係 ' + latest +
-        '。請按 Ctrl+Shift+R 強制重載（或喺網址後面加 ?v=' + Date.now().toString().slice(-6) + '）。</span>';
+      d.innerHTML = "版本 " + window.__BUILD + " ✓ 最新" +
+        (latest < window.__BUILD ? '<span class="muted">（CDN 仲係 ' + latest + '，未追上）</span>' : "");
     }catch(e){ /* 離線或被擋，唔報錯 */ }
   }
   if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", stamp);
