@@ -165,10 +165,12 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
             <option value="other">其他</option>
           </select>
           <button class="btn sec" id="caApply">套用</button>
+          <button class="btn ghost" id="caLoadHist">載入所選範圍</button>
           <button class="btn ghost" id="caReload">重新讀取 Supplier Map</button>
           <button class="btn ghost" id="caExp">匯出 CSV</button>
         </div>
-        <div class="muted" id="caStatus" style="margin-top:8px"></div>
+        <div class="muted" id="caAvail" style="margin-top:8px"></div>
+        <div class="muted" id="caStatus" style="margin-top:6px"></div>
         <div class="muted" id="caWarn" style="margin-top:6px;line-height:1.7"></div>
       </div>
 
@@ -2849,7 +2851,7 @@ if(_isXlsx){
   }
   /* 取消資料實際覆蓋嘅收貨日範圍（滾動快照，每日會前移） */
   function rowDateRange(){
-    var rows = allRows(), min = "", max = "";
+    var rows = mergedRows(), min = "", max = "";
     for(var i=0;i<rows.length;i++){
       var d = nd(rows[i].date); if(!d) continue;
       if(!min || d < min) min = d;
@@ -2861,8 +2863,11 @@ if(_isXlsx){
      向前滾，最舊一日只剩部分。實測 08-20 在 _0826 檔有 37,473 行，
      在 _0827 檔只剩 23,757 行（-37%），所以最舊一日唔可以當完整日用。 */
   function rowDayCounts(){
-    var rows = allRows(), c = {};
+    var rows = mergedRows(), c = {};
     for(var i=0;i<rows.length;i++){
+      /* 只數白名單 1P 行：歷史快照為咗慳記憶體只保留呢啲，
+         主報表卻係全部店，唔統一口徑就會把歷史日誤判成「被截斷」 */
+      if(!suffixOf(rows[i].sku_id)) continue;
       var d = nd(rows[i].date); if(!d) continue;
       c[d] = (c[d] || 0) + 1;
     }
@@ -2906,6 +2911,116 @@ if(_isXlsx){
     return "other";
   }
   var CAT_LABEL = {oos:"缺貨", quality:"質素差", missing:"缺漏", wrong:"送錯貨", broken:"外觀損壞", other:"其他"};
+
+  /* ---------- 多份每日快照：擴闊可選期 ----------
+     Drive 每日一份 `..._表格_MMDD`。實測每份完整覆蓋 MMDD-6 … MMDD-1
+     （最舊一日被 export 窗口截斷，當日未送完），窗口互相重疊，所以
+     21 份加埋覆蓋 07-31 … 08-27 冇缺口。
+     每個收貨日只由「最新一份仍然完整覆蓋佢」嘅快照提供，所以唔需要 row 級
+     去重，亦唔會有一日被計兩次。 */
+  var CANCEL_FOLDER = "1FrDUecrQv4AR-bgiGGlOi4xjnXlfI8Zd";
+  var SNAPS = null;            /* [{tag,id,from,to}] 由新到舊 */
+  var HIST = {};               /* delivery_date -> [row]，由舊快照補返 */
+  var FETCHED = {};            /* tag -> true */
+
+  function snapCoverage(tag){
+    var iso = "2026-" + tag.slice(0,2) + "-" + tag.slice(2);
+    return {from: addDays(iso, -6), to: addDays(iso, -1)};
+  }
+  async function loadSnapIndex(){
+    if(SNAPS) return SNAPS;
+    var u = "https://www.googleapis.com/drive/v3/files?q=" +
+      encodeURIComponent("'" + CANCEL_FOLDER + "' in parents and trashed=false") +
+      "&orderBy=name&pageSize=200&fields=" + encodeURIComponent("files(id,name)") + "&key=" + API_KEY;
+    var j = await (await fetch(u)).json();
+    if(j.error) throw new Error(j.error.message);
+    SNAPS = (j.files||[]).filter(function(f){ return /Cancellation Monitoring/i.test(f.name) && /_\d{4}$/.test(f.name); })
+      .map(function(f){ var t=f.name.slice(-4), c=snapCoverage(t); return {tag:t, id:f.id, from:c.from, to:c.to}; })
+      .sort(function(a,b){ return b.tag.localeCompare(a.tag); });
+    return SNAPS;
+  }
+  /* 邊份快照負責邊一日：最新一份仍然完整覆蓋佢嗰份 */
+  function ownerOf(d){
+    for(var i=0;i<SNAPS.length;i++){ if(d >= SNAPS[i].from && d <= SNAPS[i].to) return SNAPS[i]; }
+    return null;
+  }
+  function availRange(){
+    if(!SNAPS || !SNAPS.length) return null;
+    var lo = SNAPS[SNAPS.length-1].from, hi = SNAPS[0].to;
+    return {from: lo, to: hi, days: Math.round((new Date(hi) - new Date(lo))/864e5) + 1, files: SNAPS.length};
+  }
+
+  var HCOLS = ["B","C","I","L","M","P","Q","R","S","T","U"];   /* 只讀本頁用到嘅欄 */
+  async function fetchSnapshot(sn, wantDays, onProg){
+    var base = "https://sheets.googleapis.com/v4/spreadsheets/" + sn.id;
+    var mj = await (await fetch(base + "?fields=" + encodeURIComponent("sheets.properties(title,gridProperties)") + "&key=" + API_KEY)).json();
+    if(mj.error) throw new Error(sn.tag + ": " + mj.error.message);
+    var pr = ((mj.sheets||[])[0]||{}).properties || {};
+    var title = pr.title || "Sheet1", rc = (pr.gridProperties||{}).rowCount || 1000;
+    var step = 40000, got = 0;
+    for(var a = 2; a <= rc; a += step){
+      var b = Math.min(a + step - 1, rc);
+      var u = base + "/values:batchGet?" + HCOLS.map(function(c){
+        return "ranges=" + encodeURIComponent(title + "!" + c + a + ":" + c + b); }).join("&") +
+        "&majorDimension=COLUMNS&key=" + API_KEY;
+      var vj = await (await fetch(u)).json();
+      if(vj.error) throw new Error(sn.tag + ": " + vj.error.message);
+      var col = (vj.valueRanges||[]).map(function(v){ return (v.values && v.values[0]) ? v.values[0] : []; });
+      for(var r = 0; r <= b - a; r++){
+        var sku = col[3][r] || ""; if(!suffixOf(sku)) continue;
+        var dm = String(col[0][r]||"").match(/(\d{4})\D{1,3}(\d{1,2})\D{1,3}(\d{1,2})/);
+        if(!dm) continue;
+        var d = dm[1] + "-" + ("0"+dm[2]).slice(-2) + "-" + ("0"+dm[3]).slice(-2);
+        if(!wantDays[d]) continue;
+        (HIST[d] || (HIST[d] = [])).push({
+          date: d, order: col[1][r] || "", status: col[2][r] || "",
+          sku_id: sku, sku_name: col[4][r] || "",
+          cancel_type: col[5][r] || "", cs_reason: col[6][r] || "", rr_reason: col[7][r] || "",
+          sold: parseFloat(col[8][r]) || 0,
+          dispatched: (col[9][r] == null || col[9][r] === "") ? null : (parseFloat(col[9][r]) || 0),
+          refund: parseFloat(col[10][r]) || 0
+        });
+        got++;
+      }
+      if(onProg) onProg(sn.tag, Math.min(b, rc), rc, got);
+    }
+    FETCHED[sn.tag] = true;
+    return got;
+  }
+
+  /* 補齊所選範圍：只抓仲未有嘅日子，逐份快照 */
+  async function ensureRange(from, to){
+    await loadSnapIndex();
+    var need = {}, byTag = {};
+    var haveLatest = {};
+    allRows().forEach(function(r){ var d = nd(r.date); if(d) haveLatest[d] = 1; });
+    for(var d = from; d <= to; d = addDays(d, 1)){
+      if(HIST[d]) continue;
+      var own = ownerOf(d); if(!own) continue;
+      if(own.tag === SNAPS[0].tag && haveLatest[d]) continue;   /* 最新一份主報表已載入 */
+      need[d] = 1; (byTag[own.tag] || (byTag[own.tag] = {}))[d] = 1;
+    }
+    var tags = Object.keys(byTag).sort().reverse();
+    if(!tags.length) return 0;
+    var total = 0;
+    for(var i=0;i<tags.length;i++){
+      var sn = SNAPS.filter(function(x){ return x.tag === tags[i]; })[0];
+      say("載入歷史快照 " + sn.tag + "（" + (i+1) + "/" + tags.length + "）…");
+      total += await fetchSnapshot(sn, byTag[tags[i]], function(tag, done, all, got){
+        say("載入 " + tag + "（" + (i+1) + "/" + tags.length + "）… " +
+            Math.round(done/all*100) + "%，已取 " + got.toLocaleString() + " 行");
+      });
+    }
+    say("歷史已載入：" + Object.keys(HIST).length + " 日、" + total.toLocaleString() + " 行");
+    return total;
+  }
+
+  /* 主報表最新快照 + 歷史快照，逐日取其一 */
+  function mergedRows(){
+    var out = allRows().slice();
+    Object.keys(HIST).forEach(function(d){ out = out.concat(HIST[d]); });
+    return out;
+  }
 
   /* ---------- 讀 Supplier Map ---------- */
   async function loadMap(force){
@@ -2956,7 +3071,7 @@ if(_isXlsx){
 
   /* ---------- 計算 ---------- */
   function compute(){
-    var rows = allRows();
+    var rows = mergedRows();
     if(!rows.length){ warn('<span style="color:#e88">主報表未載入取消資料 —— 請先在「主要分析」載入 Drive 檔。</span>'); return false; }
     if(!MAP){ return false; }
 
@@ -3266,6 +3381,24 @@ if(_isXlsx){
     document.body.appendChild(a); a.click(); a.remove();
   }
 
+  /* Drive 上真正可選到幾耐 —— 由檔案清單推算，唔係靠已載入嘅資料 */
+  async function showAvail(){
+    try{
+      await loadSnapIndex();
+      var av = availRange(); if(!av) return;
+      var f = q("caFrom"), t = q("caTo");
+      [f, t].forEach(function(el){ if(el){ el.min = av.from; el.max = av.to; } });
+      var loaded = Object.keys(rowDayCounts()).sort();
+      q("caAvail").innerHTML =
+        '可選範圍（Drive ' + av.files + ' 份每日檔案）：<b>' + esc(av.from) + " ~ " + esc(av.to) +
+        "</b>（" + av.days + " 日）　｜　已載入 " + loaded.length + " 日" +
+        (loaded.length ? "（" + esc(loaded[0]) + " ~ " + esc(loaded[loaded.length-1]) + "）" : "") +
+        "。揀更早日期後按<b>載入所選範圍</b>補抓（每多一日約 15–20 秒，要抓多一份每日檔案）。";
+    }catch(e){
+      q("caAvail").innerHTML = '<span style="color:#e88">讀唔到 Drive 檔案清單：' + esc(e.message) + "</span>";
+    }
+  }
+
   async function refresh(force){
     var m = await loadMap(force);
     if(!m) { render(); return; }
@@ -3289,6 +3422,7 @@ if(_isXlsx){
       q("caTo").value   = hi;
     }
     if(compute()) render(); else render();
+    showAvail();
   }
 
   /* ---------- 分頁切換 ---------- */
@@ -3312,6 +3446,18 @@ if(_isXlsx){
     });
     var ap=q("caApply"); if(ap) ap.addEventListener("click", function(){ if(compute()) render(); });
     var rs=q("caReason"); if(rs) rs.addEventListener("change", render);
+    var lh=q("caLoadHist"); if(lh) lh.addEventListener("click", async function(){
+      var f=q("caFrom").value, t=q("caTo").value;
+      if(!f || !t || f > t){ alert("請先揀一個有效嘅日期範圍。"); return; }
+      lh.disabled = true;
+      try{
+        var n = await ensureRange(f, t);
+        if(!n) say("所選範圍已經載入齊，冇需要補抓。");
+        if(compute()) render(); else render();
+        showAvail();
+      }catch(e){ say("載入歷史失敗：" + e.message); }
+      finally{ lh.disabled = false; }
+    });
     var rl=q("caReload"); if(rl) rl.addEventListener("click", function(){ refresh(true); });
     var ex=q("caExp"); if(ex) ex.addEventListener("click", exportCsv);
     var bd=q("caBody"); if(bd) bd.addEventListener("click", function(ev){
