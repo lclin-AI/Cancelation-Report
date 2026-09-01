@@ -3669,5 +3669,303 @@ window.__BUILD = "2026-08-28 19:10";
 })();
 </script>
 
+<script>
+/* ===== Invisible List (Tableau) =========================================
+   Self-contained tab: injects its own button + panel, loads its own data.
+   Nothing above this block is touched.
+
+   Source: Drive subfolder "cancellation rate raw / tableau cs refund raw",
+   written daily by AI/tableau_get_refund.py from the Tableau view
+   "Express Refund Case / Express CS Refund Case" (last 7 days by order_date).
+
+   Why this tab does NOT show a cancel rate: that Tableau view only contains
+   order lines that were refunded, so quantity == refund_quantity for ~96% of
+   rows and any rate computed from it is ~100% by construction. Ranking is by
+   refund volume instead.
+   ===================================================================== */
+(function(){
+  var TAB_NAME = "ivtableau", PANEL_ID = "tab-ivtableau";
+  var FOLDER   = "1Yb0Xx_U_j7EruJrAOx9b6wWPGcJadEOw";
+  var API_KEY  = "AIzaSyD1jQcj2R5Rid5Pde1tFEFkfnHjI251YpM";
+
+  var RAW = null, CUR = [], LOADED = false, BUSY = false;
+  var SORT = { k: "refund_qty", d: -1 };
+
+  function q(id){ return document.getElementById(id); }
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g, function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+  function num(v){ var n = parseFloat(String(v==null?"":v).replace(/,/g,"")); return isNaN(n)?0:n; }
+  function fmt(n){ return (Math.round(n*100)/100).toLocaleString("en-US"); }
+
+  /* ---- data ---------------------------------------------------------- */
+  function latestFile(){
+    var u = "https://www.googleapis.com/drive/v3/files?q=" +
+      encodeURIComponent("'" + FOLDER + "' in parents and trashed=false") +
+      "&orderBy=modifiedTime desc&pageSize=20&fields=" +
+      encodeURIComponent("files(id,name,modifiedTime)") + "&key=" + API_KEY;
+    return fetch(u).then(function(r){
+      if(!r.ok) throw new Error("Drive list HTTP " + r.status);
+      return r.json();
+    }).then(function(j){
+      var fs = (j.files||[]).filter(function(f){ return /\.csv$/i.test(f.name||""); });
+      if(!fs.length) throw new Error("資料夾中未有 CSV（未跑過 tableau_get_refund.py？）");
+      return fs[0];
+    });
+  }
+
+  function load(force){
+    if(BUSY || (LOADED && !force)) { render(); return; }
+    BUSY = true;
+    info("讀取 Drive 中…");
+    latestFile().then(function(f){
+      info("載入 " + f.name + " …");
+      return fetch("https://www.googleapis.com/drive/v3/files/" + f.id +
+                   "?alt=media&key=" + API_KEY).then(function(r){
+        if(!r.ok) throw new Error("下載 HTTP " + r.status);
+        return r.text();
+      }).then(function(txt){
+        var res = Papa.parse(txt, { header:true, skipEmptyLines:true });
+        RAW = res.data || [];
+        LOADED = true; BUSY = false;
+        var meta = q("ivtbMeta");
+        if(meta){
+          var ds = RAW.map(function(r){ return r.order_date; }).filter(Boolean).sort(function(a,b){
+            return new Date(a) - new Date(b); });
+          meta.textContent = "檔案：" + f.name +
+            "　｜　Drive 更新：" + new Date(f.modifiedTime).toLocaleString("zh-HK",{hour12:false}) +
+            "　｜　" + RAW.length.toLocaleString("en-US") + " 條退款記錄" +
+            (ds.length ? "　｜　order_date " + ds[0] + " → " + ds[ds.length-1] : "");
+        }
+        buildFilters();
+        render();
+      });
+    }).catch(function(e){ BUSY = false; info("載入失敗：" + e.message); });
+  }
+
+  function info(m){ var el = q("ivtbInfo"); if(el) el.textContent = m || ""; }
+
+  /* ---- aggregation --------------------------------------------------- */
+  function compute(){
+    if(!RAW) return [];
+    var onlyAllowed = q("ivtbOnlyAllowed") && q("ivtbOnlyAllowed").checked;
+    var m = {}, order = [];
+    for(var i=0;i<RAW.length;i++){
+      var r = RAW[i];
+      var sku = r.sku_id, wm = r.store_name_chi;
+      if(!sku || !wm) continue;
+      /* reuse the existing Invisible List SKU whitelist rather than copying it */
+      if(onlyAllowed && window.__IV_SKU_ALLOWED && !window.__IV_SKU_ALLOWED(sku)) continue;
+      var k = sku + "||" + wm;
+      var o = m[k];
+      if(!o){
+        o = m[k] = { sku_id:sku, sku_name:r.sku_name_chi||"", wet_market:wm,
+                     stores:{}, store_name:"", refund_qty:0, refund_amt:0,
+                     orders:{}, order_cnt:0, days:{}, day_cnt:0, reasons:{}, top_reason:"" };
+        order.push(o);
+      }
+      var st = r.wetmarket_store_name_zh || "";
+      if(st && !o.stores[st]){ o.stores[st] = 1;
+        o.store_name = o.store_name ? o.store_name + ", " + st : st; }
+      o.refund_qty += num(r.refund_quantity);
+      o.refund_amt += num(r.refund_amount);
+      if(r.order_number && !o.orders[r.order_number]){ o.orders[r.order_number]=1; o.order_cnt++; }
+      if(r.order_date && !o.days[r.order_date]){ o.days[r.order_date]=1; o.day_cnt++; }
+      var rs = r.cancel_reason || "(未填)";
+      o.reasons[rs] = (o.reasons[rs]||0) + 1;
+    }
+    for(var j=0;j<order.length;j++){
+      var t = null, best = -1;
+      for(var rk in order[j].reasons){ if(order[j].reasons[rk] > best){ best = order[j].reasons[rk]; t = rk; } }
+      order[j].top_reason = t || "";
+    }
+    return order;
+  }
+
+  /* ---- filter dropdowns ---------------------------------------------- */
+  function buildFilters(){
+    if(!RAW) return;
+    var mk = {}, rs = {};
+    RAW.forEach(function(r){
+      if(r.store_name_chi) mk[r.store_name_chi] = 1;
+      rs[r.cancel_reason || "(未填)"] = 1;
+    });
+    fill(q("ivtbMarket"), Object.keys(mk).sort(), "全部街市");
+    fill(q("ivtbReason"), Object.keys(rs).sort(), "全部原因");
+  }
+  function fill(sel, keys, allLabel){
+    if(!sel) return;
+    var cur = sel.value;
+    var h = '<option value="">' + esc(allLabel) + "</option>";
+    keys.forEach(function(k){ h += '<option value="' + esc(k) + '">' + esc(k) + "</option>"; });
+    sel.innerHTML = h;
+    if(keys.indexOf(cur) >= 0) sel.value = cur;
+  }
+
+  /* ---- render -------------------------------------------------------- */
+  function render(){
+    if(!RAW){ return; }
+    var minQty = num((q("ivtbMinQty")||{}).value);
+    var mkVal  = (q("ivtbMarket")||{}).value || "";
+    var rsVal  = (q("ivtbReason")||{}).value || "";
+    var kw     = String((q("ivtbKw")||{}).value || "").trim().toLowerCase();
+
+    var list = compute().filter(function(o){
+      if(o.refund_qty < minQty) return false;
+      if(mkVal && o.wet_market !== mkVal) return false;
+      if(rsVal && !o.reasons[rsVal]) return false;
+      if(kw && (String(o.sku_id).toLowerCase().indexOf(kw) < 0 &&
+                String(o.sku_name).toLowerCase().indexOf(kw) < 0 &&
+                String(o.store_name).toLowerCase().indexOf(kw) < 0)) return false;
+      return true;
+    });
+
+    list.sort(function(a,b){
+      var av = a[SORT.k], bv = b[SORT.k];
+      if(typeof av === "string") return SORT.d * String(av).localeCompare(String(bv));
+      return SORT.d * ((av||0) - (bv||0));
+    });
+    CUR = list;
+
+    var totQty = 0, totAmt = 0;
+    list.forEach(function(o){ totQty += o.refund_qty; totAmt += o.refund_amt; });
+    info(list.length.toLocaleString("en-US") + " 組 SKU × 街市　｜　退款合計 " +
+         fmt(totQty) + " 件 / $" + fmt(totAmt));
+
+    var h = "";
+    for(var i=0;i<list.length;i++){
+      var o = list[i];
+      h += "<tr>" +
+        "<td>" + esc(o.wet_market) + "</td>" +
+        "<td>" + esc(o.store_name) + "</td>" +
+        '<td style="font-family:monospace">' + esc(o.sku_id) + "</td>" +
+        "<td>" + esc(o.sku_name) + "</td>" +
+        '<td style="text-align:right">' + fmt(o.refund_qty) + "</td>" +
+        '<td style="text-align:right">' + fmt(o.refund_amt) + "</td>" +
+        '<td style="text-align:right">' + o.order_cnt + "</td>" +
+        '<td style="text-align:right">' + o.day_cnt + "</td>" +
+        "<td>" + esc(o.top_reason) + "</td>" +
+      "</tr>";
+    }
+    var body = q("ivtbBody");
+    if(body) body.innerHTML = h || '<tr><td colspan="9" style="color:var(--mut);padding:12px">冇符合條件嘅記錄</td></tr>';
+  }
+
+  function exportCsv(){
+    var cols = [["wet_market","街市"],["store_name","店舖"],["sku_id","SKU ID"],
+                ["sku_name","SKU 名稱"],["refund_qty","退款件數"],["refund_amt","退款金額"],
+                ["order_cnt","涉及訂單數"],["day_cnt","涉及日數"],["top_reason","主要原因"]];
+    var lines = [cols.map(function(c){ return '"' + c[1] + '"'; }).join(",")];
+    CUR.forEach(function(o){
+      lines.push(cols.map(function(c){
+        return '"' + String(o[c[0]]==null?"":o[c[0]]).replace(/"/g,'""') + '"'; }).join(","));
+    });
+    var blob = new Blob(["﻿" + lines.join("\r\n")], {type:"text/csv;charset=utf-8;"});
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "invisible_list_tableau.csv";
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  /* ---- markup -------------------------------------------------------- */
+  function panelHtml(){
+    return '' +
+    '<div class="card">' +
+      "<h2>Invisible List (Tableau)（按 SKU × 街市）</h2>" +
+      '<div id="ivtbMeta" style="font-size:12px;color:var(--mut);margin-bottom:8px"></div>' +
+      '<div style="font-size:12px;color:var(--acc);margin-bottom:10px">' +
+        "⚠ 此頁只用 Tableau「Express CS Refund Case」資料（過去 7 日，按 order_date）。" +
+        "該來源只包含有退款嘅 order line，冇賣出量分母，所以唔顯示取消率 —— 改為按退款件數排名。" +
+      "</div>" +
+      '<div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px">' +
+        '<div><label>退款件數 &ge;</label><input type="text" id="ivtbMinQty" value="3" style="width:80px"></div>' +
+        '<div><label>街市 Wet Market</label><select id="ivtbMarket" style="width:180px"></select></div>' +
+        '<div><label>取消原因</label><select id="ivtbReason" style="width:220px"></select></div>' +
+        '<div><label>搜尋 SKU / 店舖</label><input type="text" id="ivtbKw" style="width:200px" placeholder="關鍵字"></div>' +
+        '<label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--mut)">' +
+          '<input type="checkbox" id="ivtbOnlyAllowed">只限現有 Invisible List SKU 範圍</label>' +
+        '<button class="btn sec" id="ivtbApply" style="width:auto;padding:6px 14px">套用</button>' +
+        '<button class="btn ghost" id="ivtbReload" style="width:auto;padding:6px 14px">重新載入</button>' +
+        '<button class="btn ghost" id="ivtbExport" style="width:auto;padding:6px 14px">匯出 CSV</button>' +
+      "</div>" +
+      '<div id="ivtbInfo" style="font-size:12px;color:var(--mut);margin-bottom:6px"></div>' +
+      '<div style="overflow:auto;max-height:70vh">' +
+        '<table class="thin" id="ivtbTable" style="width:100%;border-collapse:collapse"><thead><tr>' +
+          '<th data-k="wet_market" style="cursor:pointer;text-align:left">街市 Wet Market</th>' +
+          '<th data-k="store_name" style="cursor:pointer;text-align:left">店舖 Store</th>' +
+          '<th data-k="sku_id" style="cursor:pointer;text-align:left">SKU ID</th>' +
+          '<th data-k="sku_name" style="cursor:pointer;text-align:left">SKU 名稱</th>' +
+          '<th data-k="refund_qty" style="cursor:pointer;text-align:right">退款件數</th>' +
+          '<th data-k="refund_amt" style="cursor:pointer;text-align:right">退款金額</th>' +
+          '<th data-k="order_cnt" style="cursor:pointer;text-align:right">涉及訂單</th>' +
+          '<th data-k="day_cnt" style="cursor:pointer;text-align:right">涉及日數</th>' +
+          '<th data-k="top_reason" style="cursor:pointer;text-align:left">主要原因</th>' +
+        '</tr></thead><tbody id="ivtbBody"></tbody></table>' +
+      "</div>" +
+    "</div>";
+  }
+
+  /* ---- inject -------------------------------------------------------- */
+  function allPanels(){
+    return Array.prototype.slice.call(document.querySelectorAll('[id^="tab-"]'));
+  }
+
+  function inject(){
+    var tabs = document.querySelector(".tabs");
+    var host = q("tab-main");
+    if(!tabs || !host) return false;
+    if(tabs.querySelector('[data-tab="' + TAB_NAME + '"]')) return true;
+
+    var btn = document.createElement("div");
+    btn.className = "tab";
+    btn.setAttribute("data-tab", TAB_NAME);
+    btn.textContent = "Invisible List (Tableau)";
+    tabs.appendChild(btn);
+
+    var panel = document.createElement("div");
+    panel.id = PANEL_ID;
+    panel.style.display = "none";
+    panel.innerHTML = panelHtml();
+    host.parentNode.appendChild(panel);
+
+    btn.addEventListener("click", function(){
+      allPanels().forEach(function(p){ if(p.id !== PANEL_ID) p.style.display = "none"; });
+      panel.style.display = "block";
+      document.querySelectorAll(".tabs .tab").forEach(function(el){ el.classList.toggle("on", el === btn); });
+      load(false);
+    });
+    /* another tab clicked -> hide this panel */
+    tabs.addEventListener("click", function(ev){
+      var t = ev.target;
+      while(t && t !== tabs && !(t.classList && t.classList.contains("tab"))) t = t.parentNode;
+      if(!t || t === tabs) return;
+      if(t.getAttribute("data-tab") !== TAB_NAME) panel.style.display = "none";
+    }, true);
+
+    q("ivtbApply").onclick  = render;
+    q("ivtbReload").onclick = function(){ LOADED = false; load(true); };
+    q("ivtbExport").onclick = exportCsv;
+    ["ivtbMarket","ivtbReason","ivtbOnlyAllowed"].forEach(function(id){
+      var e = q(id); if(e) e.onchange = render; });
+    var kw = q("ivtbKw"), tmr = null;
+    if(kw) kw.addEventListener("input", function(){ clearTimeout(tmr); tmr = setTimeout(render, 250); });
+    var mq = q("ivtbMinQty");
+    if(mq) mq.addEventListener("keydown", function(ev){ if(ev.key === "Enter") render(); });
+
+    document.querySelectorAll("#ivtbTable thead th").forEach(function(th){
+      th.addEventListener("click", function(){
+        var k = th.getAttribute("data-k");
+        if(SORT.k === k) SORT.d = -SORT.d; else { SORT.k = k; SORT.d = -1; }
+        render();
+      });
+    });
+    return true;
+  }
+
+  function boot(){ if(!inject()) setTimeout(boot, 400); }
+  if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+  else boot();
+})();
+</script>
+
 </body>
 </html>
