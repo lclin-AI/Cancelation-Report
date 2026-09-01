@@ -3602,7 +3602,7 @@ if(_isXlsx){
    raw.githack 同 GitHub 都係即時 serve 最新檔（實測 X-Cache: MISS、
    cf-cache-status: BYPASS），所以「見到舊版」一律係瀏覽器 cache。
    之前冇任何方法喺頁面上分辨載入咗邊個版本，所以加咗呢個。 */
-window.__BUILD = "2026-08-28 19:10";
+window.__BUILD = "2026-09-01 14:30";
 (function(){
   var RAW = "https://raw.githubusercontent.com/lclin-AI/Cancelation-Report/main/index-new.html";
   function stamp(){
@@ -3707,13 +3707,20 @@ window.__BUILD = "2026-08-28 19:10";
        a = sku_cancel_reason        -> Tableau cancel_reason        (identical)
        b = sku_cs_refund_reason     -> Tableau cs_refund_reason     (identical,
            same "CODE - text" shape, so the helper's " - " split still works)
-       d = REFUND_REPORT_CANCEL_reason -> no Tableau equivalent.
-     Tableau instead carries refund_reason_code from the same code namespace as
-     b (3F13 / 3F27 / 3F3a / 3F6b / 3F2a / 3F19b ...). __EXCL_CODES already
-     lists 3F6b and 3F19b, so the codes are directly comparable. We therefore
-     (1) run refund_reason_code through __EXCL_CODES as well, and
-     (2) map 3F27 "Product is damaged" to the literal DAMAGE that the helper's
-         third argument tests for.
+       d = REFUND_REPORT_CANCEL_reason -> Tableau's refund_reason_code.
+     Those last two are the same thing seen at different granularity: over the
+     current 7 days, refund_reason_code and cs_refund_reason never both carry a
+     value for the same row (3F27 appears 213 times in one and 28 times in the
+     other, zero overlap), so they are two separate channels -- a refund opened
+     from the refund report vs one opened by CS -- exactly like the two Looker
+     columns. 3F27 "Product is damaged" is mapped to the literal DAMAGE that the
+     helper's third argument tests for.
+
+     Deliberately NOT done: running refund_reason_code through __EXCL_CODES.
+     The helper only ever tests its third argument for DAMAGE, so adding that
+     would drop 52 rows / 4 groups the existing Invisible List keeps. Same
+     reason 3F27 arriving via cs_refund_reason is kept: 3F27 is not in
+     __EXCL_CODES, so the original does not exclude it on that path either.
      -------------------------------------------------------------------- */
   var DAMAGE_CODE = "3F27";
   function rrProxy(row){ return (row.refund_reason_code || "").trim() === DAMAGE_CODE ? "DAMAGE" : ""; }
@@ -3753,11 +3760,8 @@ window.__BUILD = "2026-08-28 19:10";
   }
 
   function excluded(row){
-    if(window.__EXCL_REASON &&
-       window.__EXCL_REASON(row.cancel_reason, row.cs_refund_reason, rrProxy(row))) return true;
-    var code = (row.refund_reason_code || "").trim();
-    if(code && window.__EXCL_CODES && window.__EXCL_CODES.has(code)) return true;
-    return false;
+    return !!(window.__EXCL_REASON &&
+              window.__EXCL_REASON(row.cancel_reason, row.cs_refund_reason, rrProxy(row)));
   }
   function notCounted(row){
     return !!(window.__NO_CANCEL_COUNT &&
