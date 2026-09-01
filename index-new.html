@@ -3672,16 +3672,19 @@ window.__BUILD = "2026-08-28 19:10";
 <script>
 /* ===== Invisible List (Tableau) =========================================
    Self-contained tab: injects its own button + panel, loads its own data.
-   Nothing above this block is touched.
+   Nothing above this block is modified.
 
    Source: Drive subfolder "cancellation rate raw / tableau cs refund raw",
    written daily by AI/tableau_get_refund.py from the Tableau view
    "Express Refund Case / Express CS Refund Case" (last 7 days by order_date).
 
-   Why this tab does NOT show a cancel rate: that Tableau view only contains
-   order lines that were refunded, so quantity == refund_quantity for ~96% of
-   rows and any rate computed from it is ~100% by construction. Ranking is by
-   refund volume instead.
+   No cancel rate here on purpose: that Tableau view only contains order lines
+   that were refunded, so quantity == refund_quantity for ~96% of rows and any
+   rate derived from it is ~100% by construction. Ranking is by refund volume.
+
+   Exclusions reuse the page's own helpers rather than re-implementing them.
+   One rule cannot be applied: __IS_FULLY_CANCELLED needs combined_order_status,
+   which the Tableau view does not export. See EXCL_NOTE below.
    ===================================================================== */
 (function(){
   var TAB_NAME = "ivtableau", PANEL_ID = "tab-ivtableau";
@@ -3696,6 +3699,35 @@ window.__BUILD = "2026-08-28 19:10";
     return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
   function num(v){ var n = parseFloat(String(v==null?"":v).replace(/,/g,"")); return isNaN(n)?0:n; }
   function fmt(n){ return (Math.round(n*100)/100).toLocaleString("en-US"); }
+  function info(m){ var el = q("ivtbInfo"); if(el) el.textContent = m || ""; }
+
+  /* ---- exclusions ------------------------------------------------------
+     The Looker export feeds __EXCL_REASON / __NO_CANCEL_COUNT three fields:
+       a = sku_cancel_reason        -> Tableau cancel_reason        (identical)
+       b = sku_cs_refund_reason     -> Tableau cs_refund_reason     (identical,
+           same "CODE - text" shape, so the helper's " - " split still works)
+       d = REFUND_REPORT_CANCEL_reason -> no Tableau equivalent.
+     Tableau instead carries refund_reason_code from the same code namespace as
+     b (3F13 / 3F27 / 3F3a / 3F6b / 3F2a / 3F19b ...). __EXCL_CODES already
+     lists 3F6b and 3F19b, so the codes are directly comparable. We therefore
+     (1) run refund_reason_code through __EXCL_CODES as well, and
+     (2) map 3F27 "Product is damaged" to the literal DAMAGE that the helper's
+         third argument tests for.
+     -------------------------------------------------------------------- */
+  var DAMAGE_CODE = "3F27";
+  function rrProxy(row){ return (row.refund_reason_code || "").trim() === DAMAGE_CODE ? "DAMAGE" : ""; }
+
+  function excluded(row){
+    if(window.__EXCL_REASON &&
+       window.__EXCL_REASON(row.cancel_reason, row.cs_refund_reason, rrProxy(row))) return true;
+    var code = (row.refund_reason_code || "").trim();
+    if(code && window.__EXCL_CODES && window.__EXCL_CODES.has(code)) return true;
+    return false;
+  }
+  function notCounted(row){
+    return !!(window.__NO_CANCEL_COUNT &&
+              window.__NO_CANCEL_COUNT(row.cancel_reason, row.cs_refund_reason, rrProxy(row)));
+  }
 
   /* ---- data ---------------------------------------------------------- */
   function latestFile(){
@@ -3724,13 +3756,12 @@ window.__BUILD = "2026-08-28 19:10";
         if(!r.ok) throw new Error("下載 HTTP " + r.status);
         return r.text();
       }).then(function(txt){
-        var res = Papa.parse(txt, { header:true, skipEmptyLines:true });
-        RAW = res.data || [];
+        RAW = (Papa.parse(txt, { header:true, skipEmptyLines:true }).data) || [];
         LOADED = true; BUSY = false;
         var meta = q("ivtbMeta");
         if(meta){
-          var ds = RAW.map(function(r){ return r.order_date; }).filter(Boolean).sort(function(a,b){
-            return new Date(a) - new Date(b); });
+          var ds = RAW.map(function(r){ return r.order_date; }).filter(Boolean)
+                      .sort(function(a,b){ return new Date(a) - new Date(b); });
           meta.textContent = "檔案：" + f.name +
             "　｜　Drive 更新：" + new Date(f.modifiedTime).toLocaleString("zh-HK",{hour12:false}) +
             "　｜　" + RAW.length.toLocaleString("en-US") + " 條退款記錄" +
@@ -3742,43 +3773,52 @@ window.__BUILD = "2026-08-28 19:10";
     }).catch(function(e){ BUSY = false; info("載入失敗：" + e.message); });
   }
 
-  function info(m){ var el = q("ivtbInfo"); if(el) el.textContent = m || ""; }
-
   /* ---- aggregation --------------------------------------------------- */
   function compute(){
-    if(!RAW) return [];
+    if(!RAW) return { list:[], dropped:0, uncounted:0, oneP:0 };
+    var useExcl     = q("ivtbUseExcl") && q("ivtbUseExcl").checked;
     var onlyAllowed = q("ivtbOnlyAllowed") && q("ivtbOnlyAllowed").checked;
-    var m = {}, order = [];
+    var only3P      = useExcl && window.only3P && window.only3P();
+    var m = {}, order = [], dropped = 0, uncounted = 0, oneP = 0;
+
     for(var i=0;i<RAW.length;i++){
       var r = RAW[i];
-      var sku = r.sku_id, wm = r.store_name_chi;
+      var sku = r.sku_id, wm = r.store_name_chi, st = r.wetmarket_store_name_zh || "";
       if(!sku || !wm) continue;
-      /* reuse the existing Invisible List SKU whitelist rather than copying it */
+      if(only3P && window.is1P && window.is1P(st)) { oneP++; continue; }
+      if(useExcl && excluded(r)) { dropped++; continue; }
       if(onlyAllowed && window.__IV_SKU_ALLOWED && !window.__IV_SKU_ALLOWED(sku)) continue;
-      var k = sku + "||" + wm;
-      var o = m[k];
+
+      var k = sku + "||" + wm, o = m[k];
       if(!o){
         o = m[k] = { sku_id:sku, sku_name:r.sku_name_chi||"", wet_market:wm,
                      stores:{}, store_name:"", refund_qty:0, refund_amt:0,
-                     orders:{}, order_cnt:0, days:{}, day_cnt:0, reasons:{}, top_reason:"" };
+                     orders:{}, order_cnt:0, days:{}, day_cnt:0,
+                     reasons:{}, top_reason:"", rows:[] };
         order.push(o);
       }
-      var st = r.wetmarket_store_name_zh || "";
       if(st && !o.stores[st]){ o.stores[st] = 1;
         o.store_name = o.store_name ? o.store_name + ", " + st : st; }
-      o.refund_qty += num(r.refund_quantity);
-      o.refund_amt += num(r.refund_amount);
+      o.rows.push(r);
+
+      /* __NO_CANCEL_COUNT rows stay visible but do not add to the refund
+         total, mirroring how the original Invisible List treats them. */
+      if(useExcl && notCounted(r)) { uncounted++; }
+      else {
+        o.refund_qty += num(r.refund_quantity);
+        o.refund_amt += num(r.refund_amount);
+      }
       if(r.order_number && !o.orders[r.order_number]){ o.orders[r.order_number]=1; o.order_cnt++; }
       if(r.order_date && !o.days[r.order_date]){ o.days[r.order_date]=1; o.day_cnt++; }
       var rs = r.cancel_reason || "(未填)";
       o.reasons[rs] = (o.reasons[rs]||0) + 1;
     }
     for(var j=0;j<order.length;j++){
-      var t = null, best = -1;
-      for(var rk in order[j].reasons){ if(order[j].reasons[rk] > best){ best = order[j].reasons[rk]; t = rk; } }
+      var t = null, best = -1, rr = order[j].reasons;
+      for(var rk in rr){ if(rr[rk] > best){ best = rr[rk]; t = rk; } }
       order[j].top_reason = t || "";
     }
-    return order;
+    return { list:order, dropped:dropped, uncounted:uncounted, oneP:oneP };
   }
 
   /* ---- filter dropdowns ---------------------------------------------- */
@@ -3803,13 +3843,14 @@ window.__BUILD = "2026-08-28 19:10";
 
   /* ---- render -------------------------------------------------------- */
   function render(){
-    if(!RAW){ return; }
+    if(!RAW) return;
     var minQty = num((q("ivtbMinQty")||{}).value);
     var mkVal  = (q("ivtbMarket")||{}).value || "";
     var rsVal  = (q("ivtbReason")||{}).value || "";
     var kw     = String((q("ivtbKw")||{}).value || "").trim().toLowerCase();
 
-    var list = compute().filter(function(o){
+    var res = compute();
+    var list = res.list.filter(function(o){
       if(o.refund_qty < minQty) return false;
       if(mkVal && o.wet_market !== mkVal) return false;
       if(rsVal && !o.reasons[rsVal]) return false;
@@ -3829,12 +3870,15 @@ window.__BUILD = "2026-08-28 19:10";
     var totQty = 0, totAmt = 0;
     list.forEach(function(o){ totQty += o.refund_qty; totAmt += o.refund_amt; });
     info(list.length.toLocaleString("en-US") + " 組 SKU × 街市　｜　退款合計 " +
-         fmt(totQty) + " 件 / $" + fmt(totAmt));
+         fmt(totQty) + " 件 / $" + fmt(totAmt) +
+         "　｜　已排除 " + res.dropped + " 行（排除原因）、" + res.oneP + " 行（1P 店）、" +
+         res.uncounted + " 行不計數");
 
     var h = "";
     for(var i=0;i<list.length;i++){
       var o = list[i];
-      h += "<tr>" +
+      h += '<tr>' +
+        '<td style="text-align:center"><input type="checkbox" class="ivtbChk" data-sku="' + esc(o.sku_id) + '"></td>' +
         "<td>" + esc(o.wet_market) + "</td>" +
         "<td>" + esc(o.store_name) + "</td>" +
         '<td style="font-family:monospace">' + esc(o.sku_id) + "</td>" +
@@ -3844,52 +3888,156 @@ window.__BUILD = "2026-08-28 19:10";
         '<td style="text-align:right">' + o.order_cnt + "</td>" +
         '<td style="text-align:right">' + o.day_cnt + "</td>" +
         "<td>" + esc(o.top_reason) + "</td>" +
+        '<td class="ivtbStatus" data-sku="' + esc(o.sku_id) + '" style="text-align:center;color:var(--mut)">—</td>' +
+        '<td style="text-align:center"><a href="#" class="ivtbRawOne" data-sku="' + esc(o.sku_id) +
+          '" data-wm="' + esc(o.wet_market) + '" style="color:var(--acc)">原始</a></td>' +
       "</tr>";
     }
     var body = q("ivtbBody");
-    if(body) body.innerHTML = h || '<tr><td colspan="9" style="color:var(--mut);padding:12px">冇符合條件嘅記錄</td></tr>';
+    if(body) body.innerHTML = h || '<tr><td colspan="12" style="color:var(--mut);padding:12px">冇符合條件嘅記錄</td></tr>';
+    updateSel();
   }
 
-  function exportCsv(){
+  /* ---- selection + CMS actions --------------------------------------- */
+  function selectedSkus(){
+    var out = [];
+    document.querySelectorAll("#ivtbBody .ivtbChk").forEach(function(c){
+      if(c.checked) out.push(c.getAttribute("data-sku")); });
+    return out;
+  }
+  function updateSel(){
+    var n = selectedSkus().length;
+    var b = q("ivtbSetInv");
+    if(b) b.textContent = n ? ("設為 Invisible (已選 " + n + ")") : "設為 Invisible (已選)";
+  }
+
+  /* Reuse the existing Invisible List action instead of duplicating the
+     Supabase task/log wiring. It resolves each SKU's descriptive fields via
+     rowOf() -> window.__IV_CURRENT, and our rows already use the same shape
+     ({sku_id, sku_name, wet_market, store_name}), so we widen __IV_CURRENT
+     for the duration of the call and put it back afterwards. */
+  function setInvisible(){
+    var sel = selectedSkus();
+    if(!sel.length){ alert("未選擇 SKU。"); return; }
+    if(typeof window.__ivSetInvisibleAction !== "function"){
+      alert("Invisible 功能未載入（Supabase 未配置？）"); return;
+    }
+    var prev = window.__IV_CURRENT || [];
+    window.__IV_CURRENT = prev.concat(CUR);
+    try { window.__ivSetInvisibleAction(sel); }
+    finally { setTimeout(function(){ window.__IV_CURRENT = prev; }, 60000); }
+  }
+
+  function fetchStatus(){
+    var skus = CUR.map(function(o){ return o.sku_id; }).filter(Boolean);
+    if(!skus.length){ alert("表內冇 SKU。"); return; }
+    if(!window.SUPABASE_URL || !window.SUPABASE_ANON_KEY){
+      info("Supabase 未配置，讀唔到 CMS 狀態。"); return;
+    }
+    document.querySelectorAll("#ivtbBody .ivtbStatus").forEach(function(td){ td.textContent = "查詢中…"; });
+    var uniq = Array.from(new Set(skus)), chunks = [];
+    for(var i=0;i<uniq.length;i+=150) chunks.push(uniq.slice(i, i+150));
+    var vis = {};
+    Promise.all(chunks.map(function(ch){
+      var u = window.SUPABASE_URL.replace(/\/$/,"") + "/rest/v1/cms_3p_sku?select=cms_sku,cms_online,cms_visible&cms_sku=in.(" +
+              encodeURIComponent(ch.join(",")) + ")";
+      return fetch(u, { headers:{ apikey: window.SUPABASE_ANON_KEY,
+                                  Authorization: "Bearer " + window.SUPABASE_ANON_KEY } })
+        .then(function(r){ return r.ok ? r.json() : []; })
+        .then(function(rows){ (rows||[]).forEach(function(row){ vis[row.cms_sku] = row.cms_visible; }); });
+    })).then(function(){
+      var hit = 0;
+      document.querySelectorAll("#ivtbBody .ivtbStatus").forEach(function(td){
+        var s = td.getAttribute("data-sku");
+        if(Object.prototype.hasOwnProperty.call(vis, s)){
+          hit++;
+          var v = vis[s];
+          td.textContent = (v === true) ? "ON" : (v === false) ? "OFF" : String(v);
+          td.style.color = (v === true) ? "var(--acc)" : (v === false) ? "var(--red)" : "var(--mut)";
+        } else { td.textContent = "n/a"; td.style.color = "var(--mut)"; }
+      });
+      info("CMS 顯示狀態：" + hit + " / " + uniq.length + " 個 SKU 對到。");
+    }).catch(function(e){ info("CMS 狀態查詢失敗：" + e.message); });
+  }
+
+  /* ---- exports ------------------------------------------------------- */
+  function dl(name, text){
+    var blob = new Blob(["﻿" + text], {type:"text/csv;charset=utf-8;"});
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+  function csvRow(vals){
+    return vals.map(function(v){ return '"' + String(v==null?"":v).replace(/"/g,'""') + '"'; }).join(",");
+  }
+  function exportSummary(){
     var cols = [["wet_market","街市"],["store_name","店舖"],["sku_id","SKU ID"],
                 ["sku_name","SKU 名稱"],["refund_qty","退款件數"],["refund_amt","退款金額"],
                 ["order_cnt","涉及訂單數"],["day_cnt","涉及日數"],["top_reason","主要原因"]];
-    var lines = [cols.map(function(c){ return '"' + c[1] + '"'; }).join(",")];
-    CUR.forEach(function(o){
-      lines.push(cols.map(function(c){
-        return '"' + String(o[c[0]]==null?"":o[c[0]]).replace(/"/g,'""') + '"'; }).join(","));
-    });
-    var blob = new Blob(["﻿" + lines.join("\r\n")], {type:"text/csv;charset=utf-8;"});
-    var a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "invisible_list_tableau.csv";
-    document.body.appendChild(a); a.click(); a.remove();
+    var lines = [csvRow(cols.map(function(c){ return c[1]; }))];
+    CUR.forEach(function(o){ lines.push(csvRow(cols.map(function(c){ return o[c[0]]; }))); });
+    dl("invisible_list_tableau.csv", lines.join("\r\n"));
+  }
+  /* Raw refund rows behind the table — the Tableau equivalent of the original
+     tab's "匯出取消 Order Entry 原始資料". ONE = a single SKU x wet market. */
+  function exportRaw(ONE){
+    if(!RAW || !RAW.length){ alert("未載入資料。"); return; }
+    var pick = [];
+    if(ONE){
+      pick = RAW.filter(function(r){ return r.sku_id === ONE.sku && r.store_name_chi === ONE.wm; });
+    } else {
+      var onlyTable = q("ivtbRawOnlyTable") && q("ivtbRawOnlyTable").checked;
+      if(onlyTable){
+        var keys = {};
+        CUR.forEach(function(o){ keys[o.sku_id + "||" + o.wet_market] = 1; });
+        pick = RAW.filter(function(r){ return keys[r.sku_id + "||" + r.store_name_chi]; });
+      } else { pick = RAW.slice(); }
+    }
+    if(!pick.length){ alert("冇符合嘅原始記錄。"); return; }
+    var hdr = Object.keys(RAW[0]);
+    var lines = [csvRow(hdr)];
+    pick.forEach(function(r){ lines.push(csvRow(hdr.map(function(h){ return r[h]; }))); });
+    dl(ONE ? ("tableau_refund_raw_" + String(ONE.sku).replace(/[^A-Za-z0-9._-]/g,"_") + ".csv")
+           : "tableau_refund_raw.csv", lines.join("\r\n"));
   }
 
   /* ---- markup -------------------------------------------------------- */
+  var EXCL_NOTE =
+    "⚠ 此頁只用 Tableau「Express CS Refund Case」資料（過去 7 日，按 order_date）。" +
+    "該來源只包含有退款嘅 order line，冇賣出量分母，所以唔顯示取消率 —— 改為按退款件數排名。" +
+    "已套用現有排除規則（排除原因碼、1P 店、不計數原因）；" +
+    "但「整張單全單取消」嗰條規則做唔到，因為 Tableau 來源冇 combined_order_status 欄。";
+
   function panelHtml(){
     return '' +
     '<div class="card">' +
       "<h2>Invisible List (Tableau)（按 SKU × 街市）</h2>" +
       '<div id="ivtbMeta" style="font-size:12px;color:var(--mut);margin-bottom:8px"></div>' +
-      '<div style="font-size:12px;color:var(--acc);margin-bottom:10px">' +
-        "⚠ 此頁只用 Tableau「Express CS Refund Case」資料（過去 7 日，按 order_date）。" +
-        "該來源只包含有退款嘅 order line，冇賣出量分母，所以唔顯示取消率 —— 改為按退款件數排名。" +
-      "</div>" +
+      '<div style="font-size:12px;color:var(--acc);margin-bottom:10px">' + EXCL_NOTE + "</div>" +
       '<div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px">' +
         '<div><label>退款件數 &ge;</label><input type="text" id="ivtbMinQty" value="3" style="width:80px"></div>' +
         '<div><label>街市 Wet Market</label><select id="ivtbMarket" style="width:180px"></select></div>' +
         '<div><label>取消原因</label><select id="ivtbReason" style="width:220px"></select></div>' +
-        '<div><label>搜尋 SKU / 店舖</label><input type="text" id="ivtbKw" style="width:200px" placeholder="關鍵字"></div>' +
+        '<div><label>搜尋 SKU / 店舖</label><input type="text" id="ivtbKw" style="width:190px" placeholder="關鍵字"></div>' +
+        '<label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--mut)">' +
+          '<input type="checkbox" id="ivtbUseExcl" checked>套用現有排除規則</label>' +
         '<label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--mut)">' +
           '<input type="checkbox" id="ivtbOnlyAllowed">只限現有 Invisible List SKU 範圍</label>' +
         '<button class="btn sec" id="ivtbApply" style="width:auto;padding:6px 14px">套用</button>' +
         '<button class="btn ghost" id="ivtbReload" style="width:auto;padding:6px 14px">重新載入</button>' +
-        '<button class="btn ghost" id="ivtbExport" style="width:auto;padding:6px 14px">匯出 CSV</button>' +
+      "</div>" +
+      '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:10px">' +
+        '<button class="btn ghost" id="ivtbExport" style="width:auto;padding:6px 14px">匯出匯總表 CSV</button>' +
+        '<button class="btn ghost" id="ivtbExportRaw" style="width:auto;padding:6px 14px">匯出原始退款記錄 CSV</button>' +
+        '<label style="font-size:12px;color:var(--mut);display:inline-flex;align-items:center;gap:4px">' +
+          '<input type="checkbox" id="ivtbRawOnlyTable" checked>只限表內 SKU</label>' +
+        '<button class="btn sec" id="ivtbStatusBtn" style="width:auto;padding:6px 14px">查詢 CMS 狀態</button>' +
+        '<button class="btn" id="ivtbSetInv" style="width:auto;padding:6px 14px">設為 Invisible (已選)</button>' +
       "</div>" +
       '<div id="ivtbInfo" style="font-size:12px;color:var(--mut);margin-bottom:6px"></div>' +
       '<div style="overflow:auto;max-height:70vh">' +
         '<table class="thin" id="ivtbTable" style="width:100%;border-collapse:collapse"><thead><tr>' +
+          '<th style="width:32px;text-align:center"><input type="checkbox" id="ivtbSelAll" title="選"></th>' +
           '<th data-k="wet_market" style="cursor:pointer;text-align:left">街市 Wet Market</th>' +
           '<th data-k="store_name" style="cursor:pointer;text-align:left">店舖 Store</th>' +
           '<th data-k="sku_id" style="cursor:pointer;text-align:left">SKU ID</th>' +
@@ -3899,6 +4047,8 @@ window.__BUILD = "2026-08-28 19:10";
           '<th data-k="order_cnt" style="cursor:pointer;text-align:right">涉及訂單</th>' +
           '<th data-k="day_cnt" style="cursor:pointer;text-align:right">涉及日數</th>' +
           '<th data-k="top_reason" style="cursor:pointer;text-align:left">主要原因</th>' +
+          '<th style="text-align:center">顯示於Customer App</th>' +
+          '<th style="text-align:center">原始資料</th>' +
         '</tr></thead><tbody id="ivtbBody"></tbody></table>' +
       "</div>" +
     "</div>";
@@ -3933,7 +4083,6 @@ window.__BUILD = "2026-08-28 19:10";
       document.querySelectorAll(".tabs .tab").forEach(function(el){ el.classList.toggle("on", el === btn); });
       load(false);
     });
-    /* another tab clicked -> hide this panel */
     tabs.addEventListener("click", function(ev){
       var t = ev.target;
       while(t && t !== tabs && !(t.classList && t.classList.contains("tab"))) t = t.parentNode;
@@ -3941,17 +4090,39 @@ window.__BUILD = "2026-08-28 19:10";
       if(t.getAttribute("data-tab") !== TAB_NAME) panel.style.display = "none";
     }, true);
 
-    q("ivtbApply").onclick  = render;
-    q("ivtbReload").onclick = function(){ LOADED = false; load(true); };
-    q("ivtbExport").onclick = exportCsv;
-    ["ivtbMarket","ivtbReason","ivtbOnlyAllowed"].forEach(function(id){
+    q("ivtbApply").onclick     = render;
+    q("ivtbReload").onclick    = function(){ LOADED = false; load(true); };
+    q("ivtbExport").onclick    = exportSummary;
+    q("ivtbExportRaw").onclick = function(){ exportRaw(null); };
+    q("ivtbStatusBtn").onclick = fetchStatus;
+    q("ivtbSetInv").onclick    = setInvisible;
+    ["ivtbMarket","ivtbReason","ivtbOnlyAllowed","ivtbUseExcl"].forEach(function(id){
       var e = q(id); if(e) e.onchange = render; });
     var kw = q("ivtbKw"), tmr = null;
     if(kw) kw.addEventListener("input", function(){ clearTimeout(tmr); tmr = setTimeout(render, 250); });
     var mq = q("ivtbMinQty");
     if(mq) mq.addEventListener("keydown", function(ev){ if(ev.key === "Enter") render(); });
 
-    document.querySelectorAll("#ivtbTable thead th").forEach(function(th){
+    var selAll = q("ivtbSelAll");
+    if(selAll) selAll.addEventListener("change", function(){
+      document.querySelectorAll("#ivtbBody .ivtbChk").forEach(function(c){ c.checked = selAll.checked; });
+      updateSel();
+    });
+    var tb = q("ivtbBody");
+    if(tb){
+      tb.addEventListener("change", function(ev){
+        if(ev.target && ev.target.classList && ev.target.classList.contains("ivtbChk")) updateSel();
+      });
+      tb.addEventListener("click", function(ev){
+        var t = ev.target;
+        if(t && t.classList && t.classList.contains("ivtbRawOne")){
+          ev.preventDefault();
+          exportRaw({ sku: t.getAttribute("data-sku"), wm: t.getAttribute("data-wm") });
+        }
+      });
+    }
+
+    document.querySelectorAll("#ivtbTable thead th[data-k]").forEach(function(th){
       th.addEventListener("click", function(){
         var k = th.getAttribute("data-k");
         if(SORT.k === k) SORT.d = -SORT.d; else { SORT.k = k; SORT.d = -1; }
