@@ -3683,8 +3683,9 @@ window.__BUILD = "2026-08-28 19:10";
    rate derived from it is ~100% by construction. Ranking is by refund volume.
 
    Exclusions reuse the page's own helpers rather than re-implementing them.
-   One rule cannot be applied: __IS_FULLY_CANCELLED needs combined_order_status,
-   which the Tableau view does not export. See EXCL_NOTE below.
+   The fully-cancelled rule needs combined_order_status, which the Tableau view
+   does not export; it is resolved by order_number against the cancellation
+   rows the report has already loaded. See the note above fullyCancelled().
    ===================================================================== */
 (function(){
   var TAB_NAME = "ivtableau", PANEL_ID = "tab-ivtableau";
@@ -3716,6 +3717,40 @@ window.__BUILD = "2026-08-28 19:10";
      -------------------------------------------------------------------- */
   var DAMAGE_CODE = "3F27";
   function rrProxy(row){ return (row.refund_reason_code || "").trim() === DAMAGE_CODE ? "DAMAGE" : ""; }
+
+  /* Fully-cancelled orders.
+     Nothing in the Tableau export identifies them -- measured against 1,544
+     orders, the best field-only guess ("every line fully refunded") scored 99%
+     recall but 6.9% precision, because that export contains refunded lines and
+     nothing else, so the test is true by construction.
+     The order number does resolve it though: ingest() already keeps
+     {order, status} on window.ROWS (added for the 取消歸因 tab), so we look the
+     status up there. Orders the report has not loaded yet are kept, not
+     dropped -- the Looker export runs at 01:04 and covers up to the previous
+     day, so the newest day or two of Tableau rows never has a status. */
+  var FULLY = ["fully cancelled", "fully canceled"];
+  var _stMap = null, _stSize = -1;
+  function allRows(){
+    try { if(typeof ROWS !== "undefined" && ROWS) return ROWS; } catch(e){}
+    return window.ROWS || [];
+  }
+  function statusMap(){
+    var rows = allRows();
+    if(_stMap && _stSize === rows.length) return _stMap;
+    var m = {};
+    for(var i=0;i<rows.length;i++){
+      var o = rows[i] && rows[i].order;
+      if(o && !(o in m)) m[o] = String(rows[i].status == null ? "" : rows[i].status);
+    }
+    _stMap = m; _stSize = rows.length;
+    return m;
+  }
+  function fullyCancelled(orderNo){
+    var v = statusMap()[orderNo];
+    if(v == null) return false;               /* unknown -> keep the row */
+    v = v.replace(/[_\-]+/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+    return FULLY.indexOf(v) >= 0;
+  }
 
   function excluded(row){
     if(window.__EXCL_REASON &&
@@ -3775,17 +3810,20 @@ window.__BUILD = "2026-08-28 19:10";
 
   /* ---- aggregation --------------------------------------------------- */
   function compute(){
-    if(!RAW) return { list:[], dropped:0, uncounted:0, oneP:0 };
+    if(!RAW) return { list:[], dropped:0, uncounted:0, oneP:0, full:0, noStatus:0 };
     var useExcl     = q("ivtbUseExcl") && q("ivtbUseExcl").checked;
     var onlyAllowed = q("ivtbOnlyAllowed") && q("ivtbOnlyAllowed").checked;
     var only3P      = useExcl && window.only3P && window.only3P();
-    var m = {}, order = [], dropped = 0, uncounted = 0, oneP = 0;
+    var sm = statusMap();
+    var m = {}, order = [], dropped = 0, uncounted = 0, oneP = 0, full = 0, noStatus = 0;
 
     for(var i=0;i<RAW.length;i++){
       var r = RAW[i];
       var sku = r.sku_id, wm = r.store_name_chi, st = r.wetmarket_store_name_zh || "";
       if(!sku || !wm) continue;
+      if(!(r.order_number in sm)) noStatus++;
       if(only3P && window.is1P && window.is1P(st)) { oneP++; continue; }
+      if(useExcl && fullyCancelled(r.order_number)) { full++; continue; }
       if(useExcl && excluded(r)) { dropped++; continue; }
       if(onlyAllowed && window.__IV_SKU_ALLOWED && !window.__IV_SKU_ALLOWED(sku)) continue;
 
@@ -3818,7 +3856,8 @@ window.__BUILD = "2026-08-28 19:10";
       for(var rk in rr){ if(rr[rk] > best){ best = rr[rk]; t = rk; } }
       order[j].top_reason = t || "";
     }
-    return { list:order, dropped:dropped, uncounted:uncounted, oneP:oneP };
+    return { list:order, dropped:dropped, uncounted:uncounted, oneP:oneP,
+             full:full, noStatus:noStatus };
   }
 
   /* ---- filter dropdowns ---------------------------------------------- */
@@ -3872,7 +3911,9 @@ window.__BUILD = "2026-08-28 19:10";
     info(list.length.toLocaleString("en-US") + " 組 SKU × 街市　｜　退款合計 " +
          fmt(totQty) + " 件 / $" + fmt(totAmt) +
          "　｜　已排除 " + res.dropped + " 行（排除原因）、" + res.oneP + " 行（1P 店）、" +
-         res.uncounted + " 行不計數");
+         res.full + " 行（全單取消）、" + res.uncounted + " 行不計數" +
+         (res.noStatus ? "　｜　⚠ " + res.noStatus + " 行未有訂單狀態（取消報表未涵蓋嘅最新日子），已當作保留"
+                       : ""));
 
     var h = "";
     for(var i=0;i<list.length;i++){
@@ -4005,8 +4046,10 @@ window.__BUILD = "2026-08-28 19:10";
   var EXCL_NOTE =
     "⚠ 此頁只用 Tableau「Express CS Refund Case」資料（過去 7 日，按 order_date）。" +
     "該來源只包含有退款嘅 order line，冇賣出量分母，所以唔顯示取消率 —— 改為按退款件數排名。" +
-    "已套用現有排除規則（排除原因碼、1P 店、不計數原因）；" +
-    "但「整張單全單取消」嗰條規則做唔到，因為 Tableau 來源冇 combined_order_status 欄。";
+    "已套用現有排除規則：排除原因碼、1P 店、不計數原因，" +
+    "以及「整張單全單取消」—— Tableau 來源冇 combined_order_status，改為用 order_number " +
+    "去主報表已載入嘅取消資料查返。主報表未涵蓋嘅最新日子（Looker 每日 01:04 出，只到前一日）" +
+    "查唔到狀態嘅會保留唔剔走。";
 
   function panelHtml(){
     return '' +
