@@ -134,6 +134,14 @@ def norm_date(val):
         mo = _MONTHS.get(m.group(1)[:3].lower())
         if mo:
             return f"{int(m.group(3)):04d}-{mo:02d}-{int(m.group(2)):02d}"
+    # M/D/YYYY —— Tableau 匯出用嘅格式 (實測 9/13/2026, 所以日喺第二位)。
+    # 第一位大過 12 就當 D/M/YYYY, 免得貼咗第二種格式落嚟靜靜哋讀錯月同日。
+    m = re.match(r"^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$", s)
+    if m:
+        f, g, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if f > 12 >= g:
+            f, g = g, f
+        return f"{y:04d}-{f:02d}-{g:02d}"
     return s
 
 

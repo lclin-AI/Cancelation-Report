@@ -130,9 +130,9 @@ thead th{color:var(--mut);font-weight:600;position:sticky;top:0;background:var(-
       <div class="tab on" data-tab="main">主要分析</div>
       <div class="tab" data-tab="yday">主要分析（昨日）</div>
       <div class="tab" data-tab="detail">Order 明細</div>
-      <div class="tab" data-tab="invisible">Invisible List</div>
+      <div class="tab" data-tab="invisible">Invisible List (Looker)</div>
       <div class="tab" data-tab="cancattr">取消歸因</div>
-      <div class="tab" data-tab="allsku">全部貨品（非 1P）</div>
+      <div class="tab" data-tab="allsku">全部貨品（非 1P） (Looker)</div>
     </div>
 
     <!-- 取消歸因 (Cancellation -> Supplier) — 2026-08-27
@@ -710,7 +710,39 @@ window.runAnalyze=function(){_ra();window.__lastArr=Object.values({});};
 (function(){
   var DRIVE_FOLDER_ID = "1FrDUecrQv4AR-bgiGGlOi4xjnXlfI8Zd";
   var DRIVE_API_KEY = "AIzaSyD1jQcj2R5Rid5Pde1tFEFkfnHjI251YpM";
+  /* 2026-09-08: 主要分析 / 昨日 / Order 明細 / 取消歸因 改食 Tableau 份數。
+     Invisible List 同「全部貨品（非 1P）」照舊食上面個 Looker 匯出，留返做 cross check —
+     佢哋兩個係經 __setInvisibleRows() 走 CSV_ROWS，同 ingest() 嘅 ROWS 完全分開，
+     所以兩份數可以並存而互不影響。 */
+  var TABLEAU_FOLDER_ID = "1v6JDhKUhkJ0xPyrv0aAY8FSa55JoSdIe";
   function q(id){ return document.getElementById(id); }
+
+  /* 攞 Tableau 資料夾最新一份 CSV。同 Invisible List (Tableau) 分頁共用結果，
+     慳返第二次幾十 MB 下載。 */
+  window.__loadTableauRows = function(){
+    if(window.__TABLEAU_ROWS_P) return window.__TABLEAU_ROWS_P;
+    window.__TABLEAU_ROWS_P = (async function(){
+      var u = "https://www.googleapis.com/drive/v3/files?q=" +
+        encodeURIComponent("'" + TABLEAU_FOLDER_ID + "' in parents and trashed=false") +
+        "&orderBy=modifiedTime desc&pageSize=20&fields=" +
+        encodeURIComponent("files(id,name,modifiedTime,size)") + "&key=" + DRIVE_API_KEY;
+      var r = await fetch(u);
+      if(!r.ok) throw new Error("Tableau 資料夾清單 HTTP " + r.status);
+      var j = await r.json();
+      var fs = (j.files || []).filter(function(f){ return /\.csv$/i.test(f.name || ""); });
+      if(!fs.length) throw new Error("Tableau 資料夾未有 CSV");
+      var f = fs[0];
+      var dr = await fetch("https://www.googleapis.com/drive/v3/files/" + f.id +
+                           "?alt=media&key=" + DRIVE_API_KEY);
+      if(!dr.ok) throw new Error("Tableau 檔下載 HTTP " + dr.status);
+      var rows = (Papa.parse(await dr.text(), { header:true, skipEmptyLines:true }).data) || [];
+      try{ window.__NORM_WM && window.__NORM_WM(rows); }catch(_e){}
+      window.__TABLEAU_FILE = f;
+      window.__TABLEAU_ROWS = rows;
+      return { file:f, rows:rows };
+    })();
+    return window.__TABLEAU_ROWS_P;
+  };
   async function loadFromDriveFolder(){
     var status = q('driveStatus');
     function say(m){ if(status) status.textContent = m; }
@@ -760,9 +792,25 @@ function _finish(rows){
       r['Wet Market'] = r['merchant_name'] || r['carline_code'] || r['Wet Market'] || '';
     }
   }); }catch(_e){}
-  try{ ingest(rows); if(typeof window.__setInvisibleRows==='function') window.__setInvisibleRows(rows); if(typeof runAnalyze==='function') runAnalyze();
-    say('已載入最新檔案：'+latest.name+'（'+rows.length+' 列，'+(latest.modifiedTime||'')+'）'); try{ window.__setDataDate && window.__setDataDate(latest.name, latest.modifiedTime); }catch(_e){} try{ var _ss=document.getElementById('srcStatus'); if(_ss) _ss.textContent='\u5df2\u8f09\u5165 '+rows.length+' \u884c'; }catch(_e){}
-  }catch(e){ say('處理失敗：'+e.message); }
+  /* Looker 份數淨係餵 Invisible List 同「全部貨品（非 1P）」(CSV_ROWS)。 */
+  try{ if(typeof window.__setInvisibleRows==='function') window.__setInvisibleRows(rows); }
+  catch(e){ say('處理失敗：'+e.message); return; }
+  try{ window.__setDataDate && window.__setDataDate(latest.name, latest.modifiedTime); }catch(_e){}
+  say('已載入 Looker 檔：'+latest.name+'（'+rows.length+' 列）　｜　載入 Tableau 檔中…');
+
+  /* ROWS（主要分析 / 昨日 / Order 明細 / 取消歸因）改食 Tableau。 */
+  window.__loadTableauRows().then(function(t){
+    ingest(t.rows);
+    if(typeof runAnalyze==='function') runAnalyze();
+    try{ if(typeof buildFilters==='function') buildFilters(); }catch(_e){}
+    say('Tableau：'+t.file.name+'（'+t.rows.length+' 列）　｜　Looker：'+latest.name+'（'+rows.length+' 列，供 Invisible List 對照）');
+    try{ var _s=document.getElementById('srcStatus'); if(_s) _s.textContent='已載入 '+t.rows.length+' 行（Tableau）'; }catch(_e){}
+  }).catch(function(e){
+    /* 攞唔到 Tableau 就退返用 Looker，但一定要講清楚，
+       否則兩個 source 靜靜哋撈埋一齊。 */
+    try{ ingest(rows); if(typeof runAnalyze==='function') runAnalyze(); }catch(_e){}
+    say('⚠ Tableau 檔載入失敗（'+e.message+'）—— 主要分析暫時退返用 Looker 檔，兩邊數字會一樣，冇得 cross check。');
+  });
 }
 if(_isXlsx){
   if(typeof XLSX==='undefined'){ say('Excel 解析元件尚未載入，請稍候重試'); return; }
@@ -1603,6 +1651,16 @@ if(_isXlsx){
     if(m){
       var mo=__MONTHS[m[1].slice(0,3).toLowerCase()];
       if(mo) return m[3]+'-'+p2(mo)+'-'+p2(m[2]);
+    }
+    /* 2026-09-08: 主要分析等分頁改咗食 Tableau 份 CSV，佢個 delivery_date 係
+       M/D/YYYY（實測有 9/13/2026、9/14/2026，第二位大過 12，所以日喺第二位）。
+       年份喺最後嘅斜線格式，喺我哋幾個 source 入面只可能係佢。第一位大過 12
+       就當 D/M/YYYY，等貼咗第二種格式落嚟都唔會靜靜哋讀錯月同日。 */
+    m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    if(m){
+      var f=parseInt(m[1],10), g=parseInt(m[2],10);
+      if(f>12 && g<=12) return m[3]+'-'+p2(g)+'-'+p2(f);
+      return m[3]+'-'+p2(f)+'-'+p2(g);
     }
     return s.slice(0,10);
   }
@@ -3644,7 +3702,7 @@ if(_isXlsx){
    raw.githack 同 GitHub 都係即時 serve 最新檔（實測 X-Cache: MISS、
    cf-cache-status: BYPASS），所以「見到舊版」一律係瀏覽器 cache。
    之前冇任何方法喺頁面上分辨載入咗邊個版本，所以加咗呢個。 */
-window.__BUILD = "2026-09-08 10:05";
+window.__BUILD = "2026-09-08 11:45";
 (function(){
   var RAW = "https://raw.githubusercontent.com/lclin-AI/Cancelation-Report/main/index-new.html";
   function stamp(){
@@ -3765,11 +3823,13 @@ window.__BUILD = "2026-09-08 10:05";
     });
   }
 
-  function load(force){
-    if(BUSY || (LOADED && !force)) { render(); return; }
-    BUSY = true;
-    info("讀取 Drive 中…");
-    latestFile().then(function(f){
+  /* 2026-09-08: 主頁載入嗰陣已經攞咗同一份 Tableau CSV 餵 ROWS，所以呢度共用返個
+     promise，唔使第二次落幾十 MB。攞唔到（例如未載入過主報表）就照自己落。 */
+  function fetchRows(){
+    if(typeof window.__loadTableauRows === "function"){
+      return window.__loadTableauRows().then(function(t){ return { f:t.file, rows:t.rows }; });
+    }
+    return latestFile().then(function(f){
       var mb = f.size ? (f.size/1e6).toFixed(0) + " MB" : "";
       info("下載 " + f.name + " " + mb + "…（份數大，請等一等）");
       return fetch("https://www.googleapis.com/drive/v3/files/" + f.id +
@@ -3777,9 +3837,22 @@ window.__BUILD = "2026-09-08 10:05";
         if(!r.ok) throw new Error("下載 HTTP " + r.status);
         return r.text();
       }).then(function(txt){
+        var rows = (Papa.parse(txt, { header:true, skipEmptyLines:true }).data) || [];
+        try{ window.__NORM_WM && window.__NORM_WM(rows); }catch(e){}
+        return { f:f, rows:rows };
+      });
+    });
+  }
+
+  function load(force){
+    if(BUSY || (LOADED && !force)) { render(); return; }
+    BUSY = true;
+    info("讀取 Drive 中…");
+    fetchRows().then(function(res){
+      var f = res.f;
+      {
         info("解析中…");
-        RAW = (Papa.parse(txt, { header:true, skipEmptyLines:true }).data) || [];
-        try{ window.__NORM_WM && window.__NORM_WM(RAW); }catch(e){}
+        RAW = res.rows;
         LOADED = true; BUSY = false;
         var meta = q("ivtbMeta");
         if(meta){
@@ -3792,7 +3865,7 @@ window.__BUILD = "2026-09-08 10:05";
         }
         buildFilters();
         render();
-      });
+      }
     }).catch(function(e){ BUSY = false; info("載入失敗：" + e.message); });
   }
 
