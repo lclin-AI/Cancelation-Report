@@ -94,13 +94,23 @@ def to_num(series):
     return pd.to_numeric(series, errors="coerce").fillna(0)
 
 
+_MONTHS = {m: i for i, m in enumerate(
+    ["jan", "feb", "mar", "apr", "may", "jun",
+     "jul", "aug", "sep", "oct", "nov", "dec"], 1)}
+
+
 def norm_date(val):
     """
     將各種日期格式統一成 YYYY-MM-DD 字串, 方便比較。
     支援:
       2026年7月12日   (中文, 你 Sheet 用嘅格式)
       2026/7/12  2026-7-12  12/07/2026 (UI input 用嘅 YYYY-MM-DD)
+      Sep 6, 2026 / September 6, 2026  (英文, 見下)
     解析唔到就回傳原字串。
+
+    2026-09-08: 匯出改用 hktvexpress852 戶口之後, Looker 介面係英文, delivery_date
+    由「2026年9月6日」變成「Sep 6, 2026」。上面兩條 pattern 都接唔到, 原封放行嘅
+    字串會令 analyze_merchant_alert 嘅 strptime("%Y-%m-%d") 直接拋 ValueError。
     """
     import re
     if val is None:
@@ -118,6 +128,12 @@ def norm_date(val):
     if m:
         y, mo, d = m.groups()
         return f"{int(y):04d}-{int(mo):02d}-{int(d):02d}"
+    # 英文: Sep 6, 2026 / September 6, 2026
+    m = re.match(r"^([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})$", s)
+    if m:
+        mo = _MONTHS.get(m.group(1)[:3].lower())
+        if mo:
+            return f"{int(m.group(3)):04d}-{mo:02d}-{int(m.group(2)):02d}"
     return s
 
 
