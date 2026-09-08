@@ -719,7 +719,9 @@ window.runAnalyze=function(){_ra();window.__lastArr=Object.values({});};
 
   /* 攞 Tableau 資料夾最新一份 CSV。同 Invisible List (Tableau) 分頁共用結果，
      慳返第二次幾十 MB 下載。 */
-  window.__loadTableauRows = function(){
+  window.__loadTableauRows = function(force){
+    /* force 要真係掉走個 cache，否則分頁粒「重新載入」會靜靜哋攞返舊嗰份。 */
+    if(force) window.__TABLEAU_ROWS_P = null;
     if(window.__TABLEAU_ROWS_P) return window.__TABLEAU_ROWS_P;
     window.__TABLEAU_ROWS_P = (async function(){
       var u = "https://www.googleapis.com/drive/v3/files?q=" +
@@ -739,6 +741,11 @@ window.runAnalyze=function(){_ra();window.__lastArr=Object.values({});};
       try{ window.__NORM_WM && window.__NORM_WM(rows); }catch(_e){}
       window.__TABLEAU_FILE = f;
       window.__TABLEAU_ROWS = rows;
+      /* 由分頁粒「重新載入」入嚟嘅話，主要分析嗰邊仲揸住上一份 —— 一齊換過去，
+         否則兩張 Invisible List 會拎住唔同日子嘅檔嚟對照。 */
+      if(force){
+        try{ ingest(rows); if(typeof runAnalyze==='function') runAnalyze(); }catch(_e){}
+      }
       return { file:f, rows:rows };
     })();
     return window.__TABLEAU_ROWS_P;
@@ -3702,7 +3709,7 @@ if(_isXlsx){
    raw.githack 同 GitHub 都係即時 serve 最新檔（實測 X-Cache: MISS、
    cf-cache-status: BYPASS），所以「見到舊版」一律係瀏覽器 cache。
    之前冇任何方法喺頁面上分辨載入咗邊個版本，所以加咗呢個。 */
-window.__BUILD = "2026-09-08 11:45";
+window.__BUILD = "2026-09-08 12:10";
 (function(){
   var RAW = "https://raw.githubusercontent.com/lclin-AI/Cancelation-Report/main/index-new.html";
   function stamp(){
@@ -3825,9 +3832,9 @@ window.__BUILD = "2026-09-08 11:45";
 
   /* 2026-09-08: 主頁載入嗰陣已經攞咗同一份 Tableau CSV 餵 ROWS，所以呢度共用返個
      promise，唔使第二次落幾十 MB。攞唔到（例如未載入過主報表）就照自己落。 */
-  function fetchRows(){
+  function fetchRows(force){
     if(typeof window.__loadTableauRows === "function"){
-      return window.__loadTableauRows().then(function(t){ return { f:t.file, rows:t.rows }; });
+      return window.__loadTableauRows(force).then(function(t){ return { f:t.file, rows:t.rows }; });
     }
     return latestFile().then(function(f){
       var mb = f.size ? (f.size/1e6).toFixed(0) + " MB" : "";
@@ -3848,7 +3855,7 @@ window.__BUILD = "2026-09-08 11:45";
     if(BUSY || (LOADED && !force)) { render(); return; }
     BUSY = true;
     info("讀取 Drive 中…");
-    fetchRows().then(function(res){
+    fetchRows(force).then(function(res){
       var f = res.f;
       {
         info("解析中…");
