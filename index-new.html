@@ -3709,7 +3709,7 @@ if(_isXlsx){
    raw.githack 同 GitHub 都係即時 serve 最新檔（實測 X-Cache: MISS、
    cf-cache-status: BYPASS），所以「見到舊版」一律係瀏覽器 cache。
    之前冇任何方法喺頁面上分辨載入咗邊個版本，所以加咗呢個。 */
-window.__BUILD = "2026-09-08 12:10";
+window.__BUILD = "2026-09-08 13:05";
 (function(){
   var RAW = "https://raw.githubusercontent.com/lclin-AI/Cancelation-Report/main/index-new.html";
   function stamp(){
@@ -3876,6 +3876,32 @@ window.__BUILD = "2026-09-08 12:10";
     }).catch(function(e){ BUSY = false; info("載入失敗：" + e.message); });
   }
 
+  /* 兩個物流責任嘅退款原因，用戶指定唔可以算落 SKU 度（2026-09-08）。
+
+     同一個原因喺兩個欄嘅寫法唔同，所以比對片語而唔係 code：
+       sku_cs_refund_reason : "3F3b - Missing Item (Logistic) [貨品缺漏 (物流)]"   28 行
+       refund_reason        : "Missing Item (Logistic) [貨品缺漏 (物流)]"           1 行
+       refund_reason        : "Whole Waybill not received - tracking shows
+                               delivered (Logistic) [未收件而運單顯示…]"           83 行
+     第二個原因本身中間有 " - "，所以現有 helper 嗰招 split(" - ")[0] 攞 code 會切爛佢。
+
+     ⚠️ 片語一定要連住 "(Logistic)"。同一個欄有 "Missing Item (Merchant)" 165 行，
+     嗰啲係商戶責任，一齊剔走就會冚咗真正要跟嘅問題。
+
+     只喺呢個分頁做：Looker 匯出根本冇 refund_reason 欄，而共用嘅 __EXCL_CODES 一改
+     就會連 Invisible List (Looker) 都變埋，冇咗對照嘅意義。亦唔跟「套用現有排除規則」
+     個 checkbox 走 —— 呢兩個原因喺邊個視角都唔應該算落貨品度。 */
+  var IVTB_LOGI_PHRASES = ["Missing Item (Logistic)", "Whole Waybill not received"];
+  function ivtbLogistics(r){
+    var v = String(r.sku_cs_refund_reason == null ? "" : r.sku_cs_refund_reason) + "\n" +
+            String(r.refund_reason == null ? "" : r.refund_reason);
+    for(var i=0;i<IVTB_LOGI_PHRASES.length;i++){
+      if(v.indexOf(IVTB_LOGI_PHRASES[i]) >= 0) return true;
+    }
+    return false;
+  }
+  window.__IVTB_LOGISTICS = ivtbLogistics;
+
   /* ---- aggregation ---------------------------------------------------
      Deliberately the same shape as the main Invisible List's compute():
      sold and cancel come off the same filtered row set, and a row that
@@ -3886,7 +3912,7 @@ window.__BUILD = "2026-09-08 12:10";
     var useExcl     = q("ivtbUseExcl") && q("ivtbUseExcl").checked;
     var onlyAllowed = q("ivtbOnlyAllowed") && q("ivtbOnlyAllowed").checked;
     var only3P      = useExcl && window.only3P && window.only3P();
-    var m = {}, order = [], dropped = 0, uncounted = 0, oneP = 0, full = 0;
+    var m = {}, order = [], dropped = 0, uncounted = 0, oneP = 0, full = 0, logi = 0;
 
     for(var i=0;i<RAW.length;i++){
       var r = RAW[i];
@@ -3894,6 +3920,7 @@ window.__BUILD = "2026-09-08 12:10";
       if(!sku || !wm) continue;
       if(only3P && window.is1P && window.is1P(st)) { oneP++; continue; }
       if(useExcl && window.__IS_FULLY_CANCELLED && window.__IS_FULLY_CANCELLED(r)) { full++; continue; }
+      if(ivtbLogistics(r)) { logi++; continue; }
       if(useExcl && window.__EXCL_REASON &&
          window.__EXCL_REASON(r.sku_cancel_reason, r.sku_cs_refund_reason,
                               r.REFUND_REPORT_CANCEL_reason)) { dropped++; continue; }
@@ -3929,7 +3956,7 @@ window.__BUILD = "2026-09-08 12:10";
       for(var rk in oo.reasons){ if(oo.reasons[rk] > best){ best = oo.reasons[rk]; t = rk; } }
       oo.top_reason = t || "";
     }
-    return { list:order, dropped:dropped, uncounted:uncounted, oneP:oneP, full:full };
+    return { list:order, dropped:dropped, uncounted:uncounted, oneP:oneP, full:full, logi:logi };
   }
 
   /* ---- filter dropdowns ---------------------------------------------- */
@@ -3984,7 +4011,8 @@ window.__BUILD = "2026-09-08 12:10";
     info(list.length.toLocaleString("en-US") + " 組 SKU × 街市　｜　出售 " + fmt(tSold) +
          " 件、取消/退款 " + fmt(tCan) + " 件（" +
          (tSold ? (tCan/tSold*100).toFixed(2) : "0") + "%）" +
-         "　｜　已排除 " + res.dropped + " 行（排除原因）、" + res.oneP + " 行（1P 店）、" +
+         "　｜　已排除 " + res.logi + " 行（物流原因）、" +
+         res.dropped + " 行（排除原因）、" + res.oneP + " 行（1P 店）、" +
          res.full + " 行（全單取消）、" + res.uncounted + " 行不計入取消數");
 
     var h = "";
