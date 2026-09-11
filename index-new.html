@@ -555,6 +555,22 @@ function ingest(recs){
       date:String(g("delivery_date"))
     });
   }
+  /* 2026-09-11: carline_code health guard. BI 個 Tableau 每日檔偶爾會漏咗成條
+     carline_code (例如 _0910), 令全部 row 跌落 HKTVmall車隊 / Express車隊 冇數.
+     偵測到近乎全空就彈警告, 一睇就知係數據缺欄, 唔係 code 問題. */
+  try{
+    var _cE=0,_n=ROWS.length;
+    for(var _i=0;_i<_n;_i++){ var _c=ROWS[_i].carline; if(!_c||!String(_c).trim()) _cE++; }
+    var _r=_n?_cE/_n:0, _b=document.getElementById('carlineWarn');
+    if(_n>0 && _r>0.9){
+      if(!_b){ _b=document.createElement('div'); _b.id='carlineWarn';
+        _b.style.cssText='margin:8px 12px;padding:10px 14px;border-radius:8px;background:#5c1a1a;color:#ffd7d7;border:1px solid #a33;font-size:13px;line-height:1.55';
+        var _m=document.querySelector('.main')||document.body; _m.insertBefore(_b,_m.firstChild);
+      }
+      _b.innerHTML='⚠ 今日資料嘅 <b>carline_code</b> 幾乎全部空白 ('+Math.round(_r*100)+'% 空) — <b>車隊拆分 (Express／HKTVmall車隊) 暫時唔準確</b>, 通常係 BI 個 Tableau 每日檔漏了呢條欄, 請通知 BI。其他分析不受影響。';
+      _b.style.display='block';
+    } else if(_b){ _b.style.display='none'; }
+  }catch(_e){}
   try{ window.SKU_NAME_DB.learn(ROWS); }catch(e){}
 }
 
