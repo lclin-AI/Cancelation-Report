@@ -490,6 +490,14 @@ function toNum(v){const n=parseFloat(String(v).replace(/[^0-9.\-]/g,""));return 
 window.EXCLUDE_1P = ("叮叮菓菜|肉肉鮮生|SoFresh Select|九龍城 新興文記牛肉|九龍城 李輝記牛肉|紅豆烘焙|嘉頓麵包|3小時雪糕|有機農莊|街市即日餸|八叔凍肉|3小時超市").split('|');
 window.is1P = function(name){ try{ return window.EXCLUDE_1P.indexOf(String(name||'').trim())>=0; }catch(e){ return false; } };
 window.only3P = function(){ try{ var c=document.getElementById('f3ponly'); return c? !!c.checked : true; }catch(e){ return true; } };
+/* 2026-09-28: 匯出原始資料時要改欄名。
+   __NORM_WM 會將 Store_Name / Wet_Market 兩欄嘅【值】對調 —— 源檔係
+   Store_Name=店舖、Wet_Market=街市，而全頁 code 用緊舊口徑（Store_Name=街市）。
+   如果匯出時照出原欄名，份 CSV 嘅欄名同內容就會啱啱相反，攞去對 Drive 源檔
+   或者畀第二個人睇一定撞板。所以出檔跟【實際內容】用中文欄名。 */
+window.__RAW_HDR = function(h){
+  return h === "Store_Name" ? "街市" : h === "Wet_Market" ? "店舖" : h;
+};
 /* 2026-09-08: the source flipped Store_Name and Wet_Market. BI rebuilt the Tableau
    workbook on 09-07 (Store_Name now holds the shop, Wet_Market the street market)
    and the Looker export followed on its 09-08 run -- same header, same column
@@ -1142,7 +1150,7 @@ if(_isXlsx){
       var stSel=q("ivStore"), stVal=stSel?String(stSel.value||""):""; if(ONE){ mkVal=""; stVal=""; }
       var cols=[], cseen={};
       for(var ci=0;ci<CSV_ROWS.length && ci<50;ci++){ for(var ck in CSV_ROWS[ci]){ if(!cseen[ck]){ cseen[ck]=1; cols.push(ck); } } }
-      var out=[["__raw_row"].concat(cols)], nrow=0, qty=0, pairs={}, npair=0;
+      var out=[["__raw_row"].concat(cols.map(window.__RAW_HDR))], nrow=0, qty=0, pairs={}, npair=0;
       for(var i=0;i<CSV_ROWS.length;i++){
         var row=CSV_ROWS[i]; var sku=row["sku_id"], wm=row["Store_Name"];
         if(!sku||!wm) continue;
@@ -3725,7 +3733,7 @@ if(_isXlsx){
    raw.githack 同 GitHub 都係即時 serve 最新檔（實測 X-Cache: MISS、
    cf-cache-status: BYPASS），所以「見到舊版」一律係瀏覽器 cache。
    之前冇任何方法喺頁面上分辨載入咗邊個版本，所以加咗呢個。 */
-window.__BUILD = "2026-09-08 13:05";
+window.__BUILD = "2026-09-28 10:05";
 (function(){
   var RAW = "https://raw.githubusercontent.com/lclin-AI/Cancelation-Report/main/index-new.html";
   function stamp(){
@@ -4155,7 +4163,7 @@ window.__BUILD = "2026-09-08 13:05";
     if(cancelledOnly) pick = pick.filter(function(r){ return num(r.refund_quantity) > 0; });
     if(!pick.length){ alert("冇符合嘅原始記錄。"); return; }
     var hdr = Object.keys(RAW[0]);
-    var lines = [csvRow(hdr)];
+    var lines = [csvRow(hdr.map(window.__RAW_HDR))];
     pick.forEach(function(r){ lines.push(csvRow(hdr.map(function(h){ return r[h]; }))); });
     dl(ONE ? ("tableau_raw_" + String(ONE.sku).replace(/[^A-Za-z0-9._-]/g,"_") + ".csv")
            : "tableau_raw.csv", lines.join("\r\n"));
