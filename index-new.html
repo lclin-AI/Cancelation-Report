@@ -488,7 +488,8 @@ $("loadBtn").onclick=async()=>{
 };
 
 function toNum(v){const n=parseFloat(String(v).replace(/[^0-9.\-]/g,""));return isNaN(n)?0:n;}
-window.EXCLUDE_1P = ("叮叮菓菜|肉肉鮮生|SoFresh Select|九龍城 新興文記牛肉|九龍城 李輝記牛肉|紅豆烘焙|嘉頓麵包|3小時雪糕|有機農莊|街市即日餸|八叔凍肉|3小時超市").split('|');
+/* 2026-10-22: 用戶確認「大閘蟹專門店」係 1P。 */
+window.EXCLUDE_1P = ("叮叮菓菜|肉肉鮮生|SoFresh Select|九龍城 新興文記牛肉|九龍城 李輝記牛肉|紅豆烘焙|嘉頓麵包|3小時雪糕|有機農莊|街市即日餸|八叔凍肉|3小時超市|大閘蟹專門店").split('|');
 window.is1P = function(name){ try{ return window.EXCLUDE_1P.indexOf(String(name||'').trim())>=0; }catch(e){ return false; } };
 window.only3P = function(){ try{ var c=document.getElementById('f3ponly'); return c? !!c.checked : true; }catch(e){ return true; } };
 /* 2026-09-28: 匯出原始資料時要改欄名。
@@ -3668,7 +3669,7 @@ window.runAnalyze=function(){_ra();window.__lastArr=Object.values({});};
    raw.githack 同 GitHub 都係即時 serve 最新檔（實測 X-Cache: MISS、
    cf-cache-status: BYPASS），所以「見到舊版」一律係瀏覽器 cache。
    之前冇任何方法喺頁面上分辨載入咗邊個版本，所以加咗呢個。 */
-window.__BUILD = "2026-10-22 12:00";
+window.__BUILD = "2026-10-22 13:00";
 (function(){
   var RAW = "https://raw.githubusercontent.com/lclin-AI/Cancelation-Report/main/index-new.html";
   function stamp(){
