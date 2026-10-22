@@ -3668,7 +3668,7 @@ window.runAnalyze=function(){_ra();window.__lastArr=Object.values({});};
    raw.githack 同 GitHub 都係即時 serve 最新檔（實測 X-Cache: MISS、
    cf-cache-status: BYPASS），所以「見到舊版」一律係瀏覽器 cache。
    之前冇任何方法喺頁面上分辨載入咗邊個版本，所以加咗呢個。 */
-window.__BUILD = "2026-10-12 16:00";
+window.__BUILD = "2026-10-22 12:00";
 (function(){
   var RAW = "https://raw.githubusercontent.com/lclin-AI/Cancelation-Report/main/index-new.html";
   function stamp(){
@@ -3869,7 +3869,6 @@ window.__BUILD = "2026-10-12 16:00";
   function compute(){
     if(!RAW) return { list:[], dropped:0, uncounted:0, oneP:0, full:0 };
     var useExcl     = q("ivtbUseExcl") && q("ivtbUseExcl").checked;
-    var onlyAllowed = q("ivtbOnlyAllowed") && q("ivtbOnlyAllowed").checked;
     var only3P      = useExcl && window.only3P && window.only3P();
     var m = {}, order = [], dropped = 0, uncounted = 0, oneP = 0, full = 0, logi = 0;
 
@@ -3883,7 +3882,8 @@ window.__BUILD = "2026-10-12 16:00";
       if(useExcl && window.__EXCL_REASON &&
          window.__EXCL_REASON(r.sku_cancel_reason, r.sku_cs_refund_reason,
                               r.REFUND_REPORT_CANCEL_reason)) { dropped++; continue; }
-      if(onlyAllowed && window.__IV_SKU_ALLOWED && !window.__IV_SKU_ALLOWED(sku)) continue;
+      /* 2026-10-22: 用戶要求拎走「116 個 SKU 前綴白名單」呢層 —— 佢間接剔走咗海鮮、大閘蟹、
+         豬肉、急凍、直播貨品等 221 間 3P 店（1022 檔出售 84,717 件）。只喺呢個 Tableau 分頁拎走。 */
 
       var k = sku + "||" + wm, o = m[k];
       if(!o){
@@ -4110,7 +4110,7 @@ window.__BUILD = "2026-10-12 16:00";
     "同主 Invisible List 用同一把尺：取消率 = 取消/退款量 ÷ 出售量，" +
     "排除規則、1P 店、全單取消、不計數原因全部沿用現有邏輯，" +
     "而 combined_order_status 同 REFUND_REPORT_CANCEL_reason 都係來源原生欄位。" +
-    "預設同主頁一樣只計白名單 SKU，逐行對得上；取消個勾就會多顯示白名單以外嘅 SKU。";
+    "唔再限 SKU 白名單：所有非 1P 店（包括海鮮、大閘蟹、豬肉、急凍、直播貨品）都計。";
 
   function panelHtml(){
     return '' +
@@ -4126,8 +4126,6 @@ window.__BUILD = "2026-10-12 16:00";
         '<div><label>搜尋 SKU / 店舖</label><input type="text" id="ivtbKw" style="width:170px" placeholder="關鍵字"></div>' +
         '<label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--mut)">' +
           '<input type="checkbox" id="ivtbUseExcl" checked>套用現有排除規則</label>' +
-        '<label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--mut)">' +
-          '<input type="checkbox" id="ivtbOnlyAllowed" checked>只限現有 Invisible List SKU 範圍</label>' +
         '<button class="btn sec" id="ivtbApply" style="width:auto;padding:6px 14px">套用</button>' +
         '<button class="btn ghost" id="ivtbReload" style="width:auto;padding:6px 14px">重新載入</button>' +
       "</div>" +
@@ -4204,7 +4202,7 @@ window.__BUILD = "2026-10-12 16:00";
     q("ivtbExportRaw").onclick = function(){ exportRaw(null); };
     q("ivtbStatusBtn").onclick = fetchStatus;
     q("ivtbSetInv").onclick    = setInvisible;
-    ["ivtbMarket","ivtbReason","ivtbOnlyAllowed","ivtbUseExcl"].forEach(function(id){
+    ["ivtbMarket","ivtbReason","ivtbUseExcl"].forEach(function(id){
       var e = q(id); if(e) e.onchange = render; });
     var kw = q("ivtbKw"), tmr = null;
     if(kw) kw.addEventListener("input", function(){ clearTimeout(tmr); tmr = setTimeout(render, 250); });
